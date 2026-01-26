@@ -14,28 +14,6 @@ import numpy as np
 from PIL import Image
 
 
-def parse_tfrecord_fn(example):
-    """Parse a single tfrecord example."""
-    # Define the feature description based on LIBERO dataset structure
-    feature_description = {
-        'steps/observation/image': tf.io.VarLenFeature(tf.string),
-        'steps/observation/wrist_image': tf.io.VarLenFeature(tf.string),
-        'steps/language_instruction': tf.io.VarLenFeature(tf.string),
-        'steps/is_first': tf.io.VarLenFeature(tf.int64),
-        'steps/is_last': tf.io.VarLenFeature(tf.int64),
-    }
-    return tf.io.parse_single_example(example, feature_description)
-
-
-def decode_image(image_bytes):
-    """Decode JPEG image bytes to numpy array."""
-    try:
-        image = tf.io.decode_jpeg(image_bytes, channels=3)
-        return image.numpy()
-    except:
-        return None
-
-
 def extract_from_rlds_dataset(data_dir, output_dir, subset_name, sample_rate=5, max_episodes=None):
     """
     Extract images and text from RLDS dataset.
@@ -63,9 +41,26 @@ def extract_from_rlds_dataset(data_dir, output_dir, subset_name, sample_rate=5, 
         print(f"Dataset path not found: {dataset_path}")
         return []
     
-    # Load dataset using tensorflow_datasets
-    builder = tfds.builder_from_directory(str(dataset_path))
-    ds = builder.as_dataset(split='train')
+    # Find version directory (e.g., 1.0.0) containing dataset_info.json
+    version_dir = None
+    for subdir in dataset_path.iterdir():
+        if subdir.is_dir() and (subdir / 'dataset_info.json').exists():
+            version_dir = subdir
+            break
+    
+    if version_dir is None:
+        print(f"  [Warning] No version directory with dataset_info.json found in: {dataset_path}")
+        return []
+    
+    print(f"  Found version directory: {version_dir.name}")
+    
+    # Load dataset using tensorflow_datasets - point to version directory
+    try:
+        builder = tfds.builder_from_directory(str(version_dir))
+        ds = builder.as_dataset(split='train')
+    except Exception as e:
+        print(f"  [Error] Failed to load dataset: {e}")
+        return []
     
     episode_count = 0
     for episode in tqdm(ds, desc=f"Processing {subset_name}"):
@@ -172,4 +167,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

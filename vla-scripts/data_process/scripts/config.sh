@@ -6,10 +6,10 @@
 
 # ============== Path Configuration ==============
 # Project root directory
-export PROJECT_ROOT="/path/to/VLA-Adapter"
+export PROJECT_ROOT="/tmp/Distill-VLA"
 
 # RLDS dataset directory (contains libero_spatial_no_noops, libero_goal_no_noops, etc.)
-export RLDS_DATA_DIR="${PROJECT_ROOT}/data/modified_libero_rlds"
+export RLDS_DATA_DIR="${PROJECT_ROOT}/data/libero"
 
 # Output directory for processed data
 export OUTPUT_DIR="${PROJECT_ROOT}/data_processed"
@@ -25,10 +25,18 @@ export SAMPLE_RATE=5
 export MAX_EPISODES=""
 
 # ============== VLM Configuration ==============
+# VLM model path (local checkpoint)
+export VLM_MODEL_PATH="${PROJECT_ROOT}/ckpt/qwen3-vl-30b-a3b"
+export VLM_MODEL_NAME="Qwen3-VL-30B-A3B-Instruct"
+
 # VLM API endpoint (vLLM server)
 export OPENAI_API_BASE_URL="http://127.0.0.1:18000/v1"
 export OPENAI_API_KEY="sk-placeholder"
-export OPENAI_MODEL="Qwen3-VL-30B-A3B-Instruct"
+export OPENAI_MODEL="${VLM_MODEL_NAME}"
+
+# vLLM server settings
+export VLLM_TP=8                    # Tensor parallelism (number of GPUs)
+export VLLM_PORT=18000              # Server port
 
 # Number of frames for VLM inference
 export VLM_FRAME_NUM=6

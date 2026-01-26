@@ -1,5 +1,5 @@
 """
-VLM 自动标注脚本 - 对机器人操作视频进行物体检测和任务描述
+VLM 自动标注脚本 - 对机器人操作视频进行物体检测和任务描述（支持多物体/多bbox）
 
 基于 internm1_data_annotation.py 适配到 VLA-Adapter 项目
 
@@ -7,7 +7,7 @@ VLM 自动标注脚本 - 对机器人操作视频进行物体检测和任务描�
 输出: data_processed/annotations/bbox_results.jsonl
 
 支持两种任务:
-1. tracking: 识别被操作物体并返回首帧 BBox
+1. tracking: 识别被操作物体并返回首帧多物体 BBox
 2. task: 生成任务描述
 
 使用示例:
@@ -90,42 +90,44 @@ def parse_json(response: str) -> dict:
             raise e
 
 
-# ============== Prompts ==============
+# ============== Prompts（修正多物体格式） ==============
 
-# 带任务描述的物体追踪 prompt（推荐使用）
-PROMPT_ONE_OBJECT_TRACKING_WITH_TASK = '''\
+# 带任务描述的多物体追踪 prompt（推荐使用）
+PROMPT_MULTI_OBJECT_TRACKING_WITH_TASK = '''\
 These images represent frames from a robotic arm manipulation video.
 
 Task Description: {task_description}
 
-Based on the task description above and the visual sequence, identify the **target object being manipulated** (the object that the robot arm picks up or interacts with).
+Based on the task description above and the visual sequence, identify ALL target objects being manipulated (the objects that the robot arm picks up or interacts with).
 
 Requirements:
-1. Identify the target object's name based on the task description.
-2. Detect its bounding box in the **first frame**.
+1. Identify ALL objects' names based on the task description (could be one or multiple).
+2. Detect their bounding boxes in the **first frame** (one bbox per object).
 
 Output Requirement:
 Return the result strictly in JSON format as follows:
 {{
-  "label": "English name of the object",
-  "bbox_2d": [xmin, ymin, xmax, ymax]
+  "labels": ["object1_name", "object2_name", ...],
+  "bboxes_2d": [[xmin1, ymin1, xmax1, ymax1], [xmin2, ymin2, xmax2, ymax2], ...]
 }}
+Note: If only one object exists, return a single-element array (e.g., ["cup"], [[10,20,30,40]]).
 '''
 
-# 无任务描述的物体追踪 prompt（备用）
-PROMPT_ONE_OBJECT_TRACKING = '''\
-These images represent frames from a robotic arm manipulation video. Analyze the visual sequence to identify the target object being manipulated.
+# 无任务描述的多物体追踪 prompt（备用）
+PROMPT_MULTI_OBJECT_TRACKING = '''\
+These images represent frames from a robotic arm manipulation video. Analyze the visual sequence to identify ALL target objects being manipulated.
 
 Task:
-1. Identify the object.
-2. Detect its bounding box in the **first frame**.
+1. Identify ALL objects (could be one or multiple).
+2. Detect their bounding boxes in the **first frame** (one bbox per object).
 
 Output Requirement:
 Return the result strictly in JSON format as follows:
 {
-  "label": "English name of the object",
-  "bbox_2d": [xmin, ymin, xmax, ymax]
+  "labels": ["object1_name", "object2_name", ...],
+  "bboxes_2d": [[xmin1, ymin1, xmax1, ymax1], [xmin2, ymin2, xmax2, ymax2], ...]
 }
+Note: If only one object exists, return a single-element array (e.g., ["cup"], [[10,20,30,40]]).
 '''
 
 PROMPT_ONE_OBJECT_TASK = '''\
@@ -201,7 +203,7 @@ def process_line(
     model_name: str
 ) -> str:
     """
-    处理单行 JSONL 数据
+    处理单行 JSONL 数据（支持多物体/多bbox）
     
     Args:
         line: JSONL 行
@@ -237,15 +239,15 @@ def process_line(
         
         for retry_time in range(3):
             try:
-                # 选择 prompt
+                # 选择 prompt（替换为多物体版本）
                 if args.task == 'tracking':
-                    # 如果有原始任务描述，使用带任务描述的 prompt
+                    # 如果有原始任务描述，使用带任务描述的多物体 prompt
                     if task_description:
-                        prompt = PROMPT_ONE_OBJECT_TRACKING_WITH_TASK.format(
+                        prompt = PROMPT_MULTI_OBJECT_TRACKING_WITH_TASK.format(
                             task_description=task_description
                         )
                     else:
-                        prompt = PROMPT_ONE_OBJECT_TRACKING
+                        prompt = PROMPT_MULTI_OBJECT_TRACKING
                 elif args.task == 'task':
                     prompt = PROMPT_ONE_OBJECT_TASK
                 else:
@@ -261,12 +263,16 @@ def process_line(
                 
                 res_json = parse_json(res)
 
-                # 验证返回字段
+                # 验证返回字段（适配多物体：检查 labels 和 bboxes_2d 数组）
                 if args.task == 'tracking':
-                    if 'label' in res_json and 'bbox_2d' in res_json:
+                    # 核心修改：验证多物体字段，且保证数组长度一致
+                    if ('labels' in res_json and 'bboxes_2d' in res_json and 
+                        isinstance(res_json['labels'], list) and 
+                        isinstance(res_json['bboxes_2d'], list) and
+                        len(res_json['labels']) == len(res_json['bboxes_2d'])):
                         break
                     else:
-                        raise ValueError("Missing keys: label or bbox_2d")
+                        raise ValueError("Missing keys: labels/bboxes_2d, or they are not arrays, or length mismatch")
                 elif args.task == 'task':
                     if 'task' in res_json:
                         break
@@ -294,7 +300,7 @@ def process_line(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="VLM annotation for robot manipulation videos")
+    parser = argparse.ArgumentParser(description="VLM annotation for robot manipulation videos (support multi-object)")
     parser.add_argument(
         "--input_file", 
         type=str, 
@@ -312,7 +318,7 @@ def main():
         type=str, 
         choices=['tracking', 'task'], 
         default='tracking',
-        help="Task type: tracking (bbox detection) or task (description)"
+        help="Task type: tracking (multi-object bbox detection) or task (description)"
     )
     parser.add_argument(
         "--frame_num", 
@@ -341,7 +347,7 @@ def main():
     model_name = os.getenv("OPENAI_MODEL", "Qwen3-VL-30B-A3B-Instruct")
 
     print(f"=" * 60)
-    print(f"VLM Annotation Script")
+    print(f"VLM Annotation Script (Multi-Object Support)")
     print(f"=" * 60)
     print(f"API URL: {base_url}")
     print(f"Model: {model_name}")
@@ -396,36 +402,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-"""
-使用示例:
-
-# 1. 启动 VLM 服务 (使用 vLLM)
-vllm serve Qwen3-VL-30B-A3B-Instruct \\
-    --port 18000 \\
-    -tp 8 \\
-    --dtype half \\
-    --max-model-len 65536
-
-# 2. 运行物体检测标注
-OPENAI_API_BASE_URL=http://127.0.0.1:18000/v1 \\
-OPENAI_MODEL=Qwen3-VL-30B-A3B-Instruct \\
-python vlm_annotation.py \\
-    --input_file data_processed/vlm_input.jsonl \\
-    --output_file data_processed/annotations/bbox_results.jsonl \\
-    --task tracking \\
-    --frame_num 6 \\
-    --max_workers 32
-
-# 3. 运行任务描述生成
-OPENAI_API_BASE_URL=http://127.0.0.1:18000/v1 \\
-OPENAI_MODEL=Qwen3-VL-30B-A3B-Instruct \\
-python vlm_annotation.py \\
-    --input_file data_processed/vlm_input.jsonl \\
-    --output_file data_processed/annotations/task_results.jsonl \\
-    --task task \\
-    --frame_num 8 \\
-    --max_workers 32
-"""
-

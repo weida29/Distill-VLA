@@ -130,10 +130,23 @@ data_processed/
 ### Q: VLM 服务器怎么启动？
 
 ```bash
-# 使用 vLLM 启动
-vllm serve Qwen3-VL-30B-A3B-Instruct --port 18000 -tp 8
+# 使用启动脚本 (推荐)
+cd vla-scripts/data_process/scripts
+./start_vllm_server.sh              # 默认: 8 GPUs, port 18000
+./start_vllm_server.sh --tp 4       # 使用 4 个 GPU
+./start_vllm_server.sh --port 8000  # 使用 8000 端口
 
-# 或使用其他 OpenAI 兼容的 API
+# 或手动启动
+vllm serve /path/to/model \
+    --served-model-name Qwen3-VL-30B-A3B-Instruct \
+    --port 18000 \
+    --tensor-parallel-size 8 \
+    --trust-remote-code
+```
+
+模型路径在 `config.sh` 中配置：
+```bash
+export VLM_MODEL_PATH="${PROJECT_ROOT}/ckpt/qwen3-vl-30b-a3b"
 ```
 
 ### Q: 如何只处理部分子集？
