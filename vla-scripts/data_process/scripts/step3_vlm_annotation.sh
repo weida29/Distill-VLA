@@ -60,3 +60,4 @@ echo ""
 echo "Step 3 completed! Output saved to: ${BBOX_OUTPUT_FILE}"
 echo "Next step: Run step4_convert_to_gdino.sh"
 
+

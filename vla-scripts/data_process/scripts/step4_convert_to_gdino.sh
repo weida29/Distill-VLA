@@ -55,3 +55,4 @@ echo "To train Grounding DINO, run:"
 echo "  cd visual_teacher/GroundingDINO"
 echo "  ./finetune/run_train_ddp.sh"
 
+

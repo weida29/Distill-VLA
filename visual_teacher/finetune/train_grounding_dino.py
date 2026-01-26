@@ -251,23 +251,33 @@ class GroundingDINOCriterion(nn.Module):
             loss_giou = 1 - torch.diag(giou)
             total_loss_giou = total_loss_giou + loss_giou.sum()
             
-            # Classification loss: use max-logits for stability
-            # This encourages matched queries to have high confidence, unmatched to have low
+            # Classification loss: Token-level contrastive alignment
+            # Each matched query should have high logits at its corresponding phrase's token positions
             num_queries = pred_logits_b.shape[0]
+            max_text_len = pred_logits_b.shape[1]
             
-            # Get max logit for each query (confidence score)
-            max_logits = pred_logits_b.max(dim=-1).values  # [num_queries]
+            # Build token-level target using tokens_positive
+            # target[query_i, token_j] = 1 if query_i should align with token_j
+            target_classes = torch.zeros(num_queries, max_text_len, device=device)
             
-            # Target: matched queries should have high confidence (1.0), others low (0.0)
-            target_conf = torch.zeros(num_queries, device=device)
-            for pred_idx in matched_pred_indices:
-                target_conf[pred_idx] = 1.0
+            if tokens_positive is not None and len(tokens_positive) > 0:
+                # For each matched (pred_idx, gt_idx) pair, set target tokens
+                for pred_idx, gt_idx in zip(matched_pred_indices.tolist(), range(len(tgt_boxes))):
+                    if gt_idx < len(tokens_positive):
+                        token_span = tokens_positive[gt_idx]  # [start, end]
+                        if isinstance(token_span, (list, tuple)) and len(token_span) == 2:
+                            start, end = token_span
+                            # Set target to 1 for tokens in this phrase
+                            # Note: end is exclusive in Python slicing
+                            target_classes[pred_idx, start:end] = 1.0
             
-            # Use BCE with logits for numerical stability (avoid sigmoid + BCE)
-            loss_class = torch.nn.functional.binary_cross_entropy_with_logits(
-                max_logits, 
-                target_conf,
-                reduction='mean'
+            # Apply focal loss for token-level classification
+            # This helps with class imbalance (most tokens should be 0)
+            loss_class = self.sigmoid_focal_loss(
+                pred_logits_b,
+                target_classes,
+                alpha=self.focal_alpha,
+                gamma=self.focal_gamma
             )
             total_loss_class = total_loss_class + loss_class
             
@@ -317,6 +327,67 @@ def load_model(config_path: str, pretrained_path: str = None, device: str = 'cud
     
     model = model.to(device)
     return model
+
+
+def freeze_model_for_finetuning(model, unfreeze_decoder_layers: int = 2, freeze_text_encoder: bool = True):
+    """
+    Freeze model parameters for efficient fine-tuning.
+    
+    Strategy: Only train bbox_embed and last few decoder layers.
+    This preserves the pretrained visual-language alignment while
+    allowing the model to adapt bbox predictions to the new domain.
+    
+    Args:
+        model: Grounding DINO model
+        unfreeze_decoder_layers: Number of decoder layers to unfreeze from the end (default 2)
+        freeze_text_encoder: Whether to freeze BERT text encoder (default True)
+    
+    Returns:
+        Number of trainable parameters
+    """
+    # First, freeze all parameters
+    for param in model.parameters():
+        param.requires_grad = False
+    
+    # Unfreeze bbox_embed (the bbox regression head)
+    if hasattr(model, 'bbox_embed'):
+        for param in model.bbox_embed.parameters():
+            param.requires_grad = True
+        print("Unfroze: bbox_embed")
+    
+    # Unfreeze the last N decoder layers
+    if hasattr(model, 'transformer') and hasattr(model.transformer, 'decoder'):
+        decoder = model.transformer.decoder
+        num_layers = len(decoder.layers)
+        start_layer = max(0, num_layers - unfreeze_decoder_layers)
+        
+        for i in range(start_layer, num_layers):
+            for param in decoder.layers[i].parameters():
+                param.requires_grad = True
+            print(f"Unfroze: decoder.layers[{i}]")
+        
+        # Also unfreeze decoder norm if exists
+        if hasattr(decoder, 'norm') and decoder.norm is not None:
+            for param in decoder.norm.parameters():
+                param.requires_grad = True
+            print("Unfroze: decoder.norm")
+    
+    # Optionally unfreeze text encoder (not recommended for preserving generalization)
+    if not freeze_text_encoder and hasattr(model, 'bert'):
+        for param in model.bert.parameters():
+            param.requires_grad = True
+        print("Unfroze: bert (text encoder)")
+    
+    # Count trainable parameters
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    
+    print(f"\nParameter Statistics:")
+    print(f"  Total parameters: {total_params:,}")
+    print(f"  Trainable parameters: {trainable_params:,}")
+    print(f"  Trainable ratio: {trainable_params/total_params*100:.2f}%")
+    
+    return trainable_params
 
 
 # ============== Training ==============
@@ -546,20 +617,29 @@ def main(args):
     else:
         model_without_ddp = model
     
-    # Count parameters
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Total parameters: {total_params:,}")
-    print(f"Trainable parameters: {trainable_params:,}")
-    
-    # Freeze backbone if specified
-    if args.freeze_backbone:
+    # Apply parameter-efficient fine-tuning if specified
+    if args.efficient_finetune:
+        print("\n" + "=" * 50)
+        print("Applying parameter-efficient fine-tuning strategy")
+        print("=" * 50)
+        freeze_model_for_finetuning(
+            model_without_ddp,
+            unfreeze_decoder_layers=args.unfreeze_decoder_layers,
+            freeze_text_encoder=args.freeze_text_encoder
+        )
+    elif args.freeze_backbone:
+        # Legacy option: only freeze backbone
         print("Freezing backbone...")
         for name, param in model_without_ddp.named_parameters():
             if 'backbone' in name:
                 param.requires_grad = False
-        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        print(f"Trainable parameters after freezing: {trainable_params:,}")
+    
+    # Count parameters
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"\nTotal parameters: {total_params:,}")
+    print(f"Trainable parameters: {trainable_params:,}")
+    print(f"Frozen parameters: {total_params - trainable_params:,}")
     
     # Build criterion
     criterion = GroundingDINOCriterion(
@@ -699,18 +779,26 @@ def parse_args():
     parser.add_argument('--pretrained', type=str, default=None)
     parser.add_argument('--freeze-backbone', action='store_true')
     
+    # Parameter-efficient fine-tuning options
+    parser.add_argument('--efficient-finetune', action='store_true', 
+                        help='Enable parameter-efficient fine-tuning (freeze most layers)')
+    parser.add_argument('--unfreeze-decoder-layers', type=int, default=2,
+                        help='Number of decoder layers to unfreeze from the end (default: 2)')
+    parser.add_argument('--freeze-text-encoder', action='store_true', default=True,
+                        help='Freeze BERT text encoder (default: True)')
+    
     # Training
     parser.add_argument('--batch-size', type=int, default=2, help='Batch size per GPU')
-    parser.add_argument('--epochs', type=int, default=50)
-    parser.add_argument('--lr', type=float, default=1e-5)  # Much smaller for fine-tuning
+    parser.add_argument('--epochs', type=int, default=15)  # Fewer epochs for parameter-efficient finetuning
+    parser.add_argument('--lr', type=float, default=1e-6)  # Very small lr to prevent catastrophic forgetting
     parser.add_argument('--weight-decay', type=float, default=1e-4)
-    parser.add_argument('--lr-drop', type=int, default=40)
-    parser.add_argument('--clip-max-norm', type=float, default=0.5)  # Less aggressive clipping
+    parser.add_argument('--lr-drop', type=int, default=10)  # Adjusted for fewer epochs
+    parser.add_argument('--clip-max-norm', type=float, default=0.5)
     
     # Loss
     parser.add_argument('--loss-coef-bbox', type=float, default=5.0)
     parser.add_argument('--loss-coef-giou', type=float, default=2.0)
-    parser.add_argument('--loss-coef-class', type=float, default=2.0)  # Enable class loss for confidence learning
+    parser.add_argument('--loss-coef-class', type=float, default=0.0)  # Disable class loss to preserve confidence distribution
     
     # Output
     parser.add_argument('--output-dir', type=str, default=None)

@@ -49,3 +49,4 @@ echo ""
 echo "Step 1 completed! Output saved to: ${KEYFRAMES_DIR}"
 echo "Next step: Run step2_prepare_vlm_input.sh"
 
+

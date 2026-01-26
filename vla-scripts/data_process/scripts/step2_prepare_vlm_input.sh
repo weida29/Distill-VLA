@@ -40,3 +40,4 @@ echo ""
 echo "Step 2 completed! Output saved to: ${VLM_INPUT_FILE}"
 echo "Next step: Run step3_vlm_annotation.sh (requires VLM server)"
 
+
