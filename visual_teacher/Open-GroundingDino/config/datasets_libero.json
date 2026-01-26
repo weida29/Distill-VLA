@@ -1,0 +1,18 @@
+{
+  "train": [
+    {
+      "root": "${DATA_ROOT}/images/",
+      "anno": "${DATA_ROOT}/train.jsonl",
+      "dataset_mode": "odvg"
+    }
+  ],
+  "val": [
+    {
+      "root": "${DATA_ROOT}/images/",
+      "anno": "${DATA_ROOT}/val_coco.json",
+      "label_map": null,
+      "dataset_mode": "coco"
+    }
+  ]
+}
+
