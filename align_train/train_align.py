@@ -489,7 +489,8 @@ def main(cfg: AlignTrainConfig):
     # ============ Data ============
     
     processor = PrismaticProcessor.from_pretrained(
-        str(PROJECT_ROOT / cfg.vla_config_path.replace("config.json", ""))
+        str(PROJECT_ROOT / cfg.vla_config_path.replace("config.json", "")),
+        trust_remote_code=True,
     )
     action_tokenizer = ActionTokenizer(processor.tokenizer)
     
