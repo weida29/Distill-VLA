@@ -61,7 +61,7 @@ def build_category_mapping(annotations: List[Dict]) -> Dict[str, int]:
     for ann in annotations:
         if 'grounding' in ann:
             for region in ann['grounding'].get('regions', []):
-                phrase = region.get('phrase', '').lower().strip()
+                phrase = region.get('phrase', '').strip()
                 if phrase:
                     phrases.add(phrase)
     
@@ -135,7 +135,7 @@ def convert_vg_to_coco(
         # Add annotations for this image
         if 'grounding' in vg_ann:
             for region in vg_ann['grounding'].get('regions', []):
-                phrase = region.get('phrase', '').lower().strip()
+                phrase = region.get('phrase', '').strip()
                 bbox_xyxy = region.get('bbox', [0, 0, 0, 0])
                 
                 if phrase not in category_mapping:
@@ -217,4 +217,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 

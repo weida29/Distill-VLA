@@ -43,10 +43,9 @@ OUTPUT_DIR="${PROJECT_ROOT}/checkpoints/open_gdino_finetuned"
 # ============================================
 # Training Hyperparameters
 # ============================================
-
-BATCH_SIZE=4              # Per GPU batch size
-EPOCHS=25                 # Training epochs
-LR=0.0001                 # Base learning rate
+BATCH_SIZE=4          # Batch size per GPU
+EPOCHS=15             # Total training epochs
+LR=0.0001             # Base learning rate
 
 # ============================================
 # Validation
@@ -97,6 +96,9 @@ cp "${CONFIG}" "${TMP_CONFIG}"
 
 # Replace bert path in config
 sed -i "s|text_encoder_type = \"bert-base-uncased\"|text_encoder_type = \"${BERT_PATH}\"|g" "${TMP_CONFIG}"
+
+# Set use_coco_eval to False for custom dataset (required for non-COCO validation)
+sed -i "s|use_coco_eval = True|use_coco_eval = False|g" "${TMP_CONFIG}"
 
 # Extract unique labels from train.jsonl and add label_list to config
 echo "Extracting unique labels from training data..."
@@ -154,7 +156,6 @@ cat > "${TMP_DATASETS}" << EOF
     {
       "root": "${IMAGE_ROOT}/",
       "anno": "${DATA_ROOT}/train.jsonl",
-      "label_map": "${DATA_ROOT}/label_map.json",
       "dataset_mode": "odvg"
     }
   ],
@@ -195,9 +196,6 @@ torchrun \
     --datasets "${TMP_DATASETS}" \
     --pretrain_model_path "${PRETRAINED_MODEL}" \
     --output_dir "${OUTPUT_DIR}" \
-    --batch_size ${BATCH_SIZE} \
-    --epochs ${EPOCHS} \
-    --lr ${LR} \
     --options "text_encoder_type=${BERT_PATH}"
 
 echo ""

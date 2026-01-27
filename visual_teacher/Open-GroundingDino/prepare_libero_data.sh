@@ -116,3 +116,4 @@ echo "  2. Download pretrained model to: ${SCRIPT_DIR}/weights/groundingdino_swi
 echo "  3. Run: bash train_libero.sh"
 echo "============================================"
 
+
