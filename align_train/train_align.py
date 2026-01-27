@@ -211,7 +211,7 @@ def train_step(
             input_ids=batch["input_ids"].to(device),
             attention_mask=batch["attention_mask"].to(device),
             pixel_values=batch["pixel_values"].to(dtype).to(device),
-            labels=batch["labels"],
+            labels=batch["labels"].to(device) if batch["labels"] is not None else None,
             output_hidden_states=True,
         )
     
