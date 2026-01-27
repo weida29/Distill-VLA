@@ -40,8 +40,8 @@ VLM_PATH=${VLM_PATH:-"pretrained_models/prism-qwen25-extra-dinosiglip-224px-0_5b
 GDINO_CKPT=${GDINO_CKPT:-"checkpoints/open_gdino_finetuned/checkpoint_best_regular.pth"}
 
 # Data paths
-DATA_ROOT=${DATA_ROOT:-"datasets/rlds"}
-DATASET_NAME=${DATASET_NAME:-"libero_spatial_no_noops"}
+DATA_ROOT=${DATA_ROOT:-"data/libero"}
+DATASET_NAME=${DATASET_NAME:-"libero_10_no_noops"}
 
 # Training
 LEARNING_RATE=${LEARNING_RATE:-5e-4}

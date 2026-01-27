@@ -25,8 +25,8 @@ class AlignTrainConfig:
     bert_path: str = "pretrained_models/bert-base-uncased"  # BERT for text encoding
     
     # ============ Data Paths ============
-    data_root_dir: Path = Path("datasets/rlds")
-    dataset_name: str = "libero_spatial_no_noops"
+    data_root_dir: Path = Path("data/libero")
+    dataset_name: str = "libero_10_no_noops"
     bbox_annotation_file: str = "data_processed/bbox.json"
     shuffle_buffer_size: int = 100_000
     
