@@ -98,6 +98,54 @@ cp "${CONFIG}" "${TMP_CONFIG}"
 # Replace bert path in config
 sed -i "s|text_encoder_type = \"bert-base-uncased\"|text_encoder_type = \"${BERT_PATH}\"|g" "${TMP_CONFIG}"
 
+# Extract unique labels from train.jsonl and add label_list to config
+echo "Extracting unique labels from training data..."
+LABEL_INFO=$(python3 << EOF
+import json
+import sys
+
+labels = set()
+train_file = "${DATA_ROOT}/train.jsonl"
+
+try:
+    with open(train_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                data = json.loads(line)
+                if 'grounding' in data and 'regions' in data['grounding']:
+                    for region in data['grounding']['regions']:
+                        if 'phrase' in region:
+                            labels.add(region['phrase'])
+            except json.JSONDecodeError:
+                continue
+except FileNotFoundError:
+    print(f"Error: {train_file} not found", file=sys.stderr)
+    sys.exit(1)
+
+# Sort labels for consistent output
+sorted_labels = sorted(labels)
+label_list_str = "label_list = [" + ", ".join([f"'{label}'" for label in sorted_labels]) + "]"
+# Output: label_list_str|count (separated by |)
+print(f"{label_list_str}|{len(sorted_labels)}")
+EOF
+)
+
+if [ $? -eq 0 ] && [ -n "${LABEL_INFO}" ]; then
+    # Split label_list and count
+    LABEL_LIST=$(echo "${LABEL_INFO}" | cut -d'|' -f1)
+    LABEL_COUNT=$(echo "${LABEL_INFO}" | cut -d'|' -f2)
+    
+    # Append label_list to the end of config file
+    echo "" >> "${TMP_CONFIG}"
+    echo "${LABEL_LIST}" >> "${TMP_CONFIG}"
+    echo "Added label_list with ${LABEL_COUNT} unique labels to config"
+else
+    echo "Warning: Failed to extract labels, continuing without label_list"
+fi
+
 # Update datasets config with actual paths
 TMP_DATASETS="${SCRIPT_DIR}/config/datasets_libero_train.json"
 cat > "${TMP_DATASETS}" << EOF
@@ -106,6 +154,7 @@ cat > "${TMP_DATASETS}" << EOF
     {
       "root": "${IMAGE_ROOT}/",
       "anno": "${DATA_ROOT}/train.jsonl",
+      "label_map": "${DATA_ROOT}/label_map.json",
       "dataset_mode": "odvg"
     }
   ],

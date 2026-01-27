@@ -10,7 +10,8 @@ Input format (normalized 0-1):
     "grounding": {
         "caption": "bowl. plate.",
         "regions": [{"phrase": "bowl", "bbox": [0.406, 0.375, 0.462, 0.481]}]
-    }
+    },
+    "prompt": "pick up the bowl and place it on the plate"  # optional
 }
 
 Output format (pixel coordinates):
@@ -18,10 +19,14 @@ Output format (pixel coordinates):
     "filename": "xxx.jpg",
     "height": 256, "width": 256,
     "grounding": {
-        "caption": "bowl. plate.",
-        "regions": [{"phrase": "bowl", "bbox": [104, 96, 118, 123]}]
+        "caption": "pick up the bowl and place it on the plate",  # uses prompt if available
+        "regions": [{"phrase": "bowl", "bbox": [104, 96, 118, 123]}]  # phrase is the object
     }
 }
+
+Note: The caption field will use the original prompt (instruction) if available,
+      otherwise it falls back to the original caption. The phrase in regions
+      remains the object name.
 
 Usage:
     python convert_to_open_gdino.py --input_dir data_processed/grounding_dino_dataset \
@@ -115,8 +120,12 @@ def convert_annotation(ann: Dict, image_root_prefix: str = "") -> Dict:
                 'bbox': bbox_pixel
             })
         
+        # Use original prompt as caption if available, otherwise fall back to original caption
+        # This ensures caption is the instruction/prompt, while phrase remains the object name
+        caption = ann.get('prompt', grounding.get('caption', ''))
+        
         new_ann['grounding'] = {
-            'caption': grounding.get('caption', ''),
+            'caption': caption,
             'regions': new_regions
         }
     
