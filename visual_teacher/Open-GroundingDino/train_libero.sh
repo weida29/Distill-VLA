@@ -8,9 +8,12 @@
 # 2. Prepare data in: data_processed/open_gdino_dataset/
 #
 # Usage:
-#   bash train_libero.sh                    # Use all available GPUs
-#   bash train_libero.sh 4                  # Use 4 GPUs
+#   bash train_libero.sh [NUM_GPUS] [BATCH_SIZE] [EPOCHS] [LR]
+#   bash train_libero.sh                       # 8 GPUs, default settings
+#   bash train_libero.sh 4                     # 4 GPUs, default settings
+#   bash train_libero.sh 4 2 30 0.00005        # 4 GPUs, batch=2, epochs=30, lr=5e-5
 #   CUDA_VISIBLE_DEVICES=0,1 bash train_libero.sh 2  # Use specific GPUs
+#   RESUME=path/checkpoint.pth bash train_libero.sh 4  # Resume from checkpoint
 
 set -e
 
@@ -43,9 +46,13 @@ OUTPUT_DIR="${PROJECT_ROOT}/checkpoints/open_gdino_finetuned"
 # ============================================
 # Training Hyperparameters
 # ============================================
-BATCH_SIZE=4          # Batch size per GPU
-EPOCHS=15             # Total training epochs
-LR=0.0001             # Base learning rate
+BATCH_SIZE=${2:-4}        # Batch size per GPU (default: 4)
+EPOCHS=${3:-15}           # Total epochs (default: 15)
+LR=${4:-0.0001}           # Learning rate (default: 0.0001)
+
+# Resume training (set to checkpoint path via env var, or empty for fresh start)
+# Usage: RESUME=path/to/checkpoint.pth bash train_libero.sh
+RESUME=${RESUME:-""}
 
 # ============================================
 # Validation
@@ -59,6 +66,9 @@ echo "Batch size per GPU: ${BATCH_SIZE}"
 echo "Effective batch size: $((BATCH_SIZE * NUM_GPUS))"
 echo "Epochs: ${EPOCHS}"
 echo "Learning rate: ${LR}"
+if [ -n "${RESUME}" ]; then
+    echo "Resume from: ${RESUME}"
+fi
 echo ""
 echo "Data root: ${DATA_ROOT}"
 echo "BERT path: ${BERT_PATH}"
@@ -188,6 +198,16 @@ echo ""
 
 cd "${SCRIPT_DIR}"
 
+# Disable tokenizers parallelism warning
+export TOKENIZERS_PARALLELISM=false
+
+# Build resume argument if specified
+RESUME_ARG=""
+if [ -n "${RESUME}" ]; then
+    RESUME_ARG="--resume ${RESUME}"
+    echo "Resuming from: ${RESUME}"
+fi
+
 torchrun \
     --nproc_per_node=${NUM_GPUS} \
     --master_port=29501 \
@@ -196,7 +216,11 @@ torchrun \
     --datasets "${TMP_DATASETS}" \
     --pretrain_model_path "${PRETRAINED_MODEL}" \
     --output_dir "${OUTPUT_DIR}" \
-    --options "text_encoder_type=${BERT_PATH}"
+    ${RESUME_ARG} \
+    --options text_encoder_type="${BERT_PATH}" \
+              batch_size=${BATCH_SIZE} \
+              epochs=${EPOCHS} \
+              lr=${LR}
 
 echo ""
 echo "============================================"

@@ -19,10 +19,10 @@ class AlignTrainConfig:
     vla_checkpoint: Optional[str] = None  # Path to pretrained VLA checkpoint
     vlm_path: str = "pretrained_models/prism-qwen25-extra-dinosiglip-224px-0_5b"
     
-    # Grounding DINO teacher
-    gdino_config: str = "visual_teacher/GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py"
-    gdino_checkpoint: str = "visual_teacher/pretrained_ckpt/groundingdino_swint_ogc.pth"
-    gdino_finetuned_checkpoint: Optional[str] = None  # Path to LIBERO-finetuned GDINO
+    # Grounding DINO teacher (Open-GroundingDino)
+    gdino_config: str = "visual_teacher/Open-GroundingDino/config/cfg_odvg.py"
+    gdino_checkpoint: str = "checkpoints/open_gdino_finetuned/checkpoint_best_regular.pth"
+    bert_path: str = "pretrained_models/bert-base-uncased"  # BERT for text encoding
     
     # ============ Data Paths ============
     data_root_dir: Path = Path("datasets/rlds")
@@ -53,26 +53,24 @@ class AlignTrainConfig:
     log_freq: int = 10
     
     # ============ Loss Weights ============
-    # Action prediction loss (original VLA task)
+    # Action prediction loss (original VLA task, L1 regression)
     action_loss_weight: float = 1.0
     
-    # Grounding distillation losses
-    grounding_loss_weight: float = 0.1  # Overall weight for grounding losses
-    kl_weight: float = 1.0              # KL distillation weight
-    bbox_weight: float = 5.0            # BBox L1 weight
-    giou_weight: float = 2.0            # GIoU weight
-    class_weight: float = 1.0           # Classification weight
-    distill_temperature: float = 2.0    # KL distillation temperature
+    # Feature alignment losses (MSE: student vs teacher)
+    hs_weight: float = 1.0              # Hidden state alignment weight
+    ref_weight: float = 1.0             # Reference point alignment weight
+    
+    # Total loss = action_loss_weight * action_loss + hs_weight * loss_hs + ref_weight * loss_ref
     
     # ============ Model Architecture ============
-    # Feature adapter
-    adapter_type: str = "spatial"  # "spatial" or "query"
-    gdino_dim: int = 256           # Grounding DINO hidden dimension
-    num_feature_levels: int = 1    # Number of multi-scale feature levels
-    adapter_dropout: float = 0.1
+    # Grounding Module
+    num_grounding_queries: int = 900  # Number of grounding queries (same as GDINO)
+    gdino_dim: int = 256              # Grounding DINO hidden dimension
+    grounding_dropout: float = 0.1    # Dropout in grounding module
     
-    # VLA dimensions (auto-detected from model)
-    vla_dim: int = 1152  # DINOv2(768) + SigLIP(384)
+    # VLA dimensions
+    llm_dim: int = 896                # LLM hidden dimension (Qwen2.5-0.5B)
+    vla_dim: int = 1152               # Vision backbone output (DINOv2(768) + SigLIP(384))
     
     # ============ Training Mode ============
     # What to train
@@ -121,7 +119,7 @@ class AlignTrainConfig:
 
 @dataclass  
 class GDINOConfig:
-    """Configuration for Grounding DINO model (for reference)."""
+    """Configuration for Open-GroundingDino model (for reference)."""
     
     # Model architecture
     hidden_dim: int = 256
@@ -137,6 +135,10 @@ class GDINOConfig:
     # Detection head
     dec_pred_bbox_embed_share: bool = True
     two_stage_type: str = "standard"
+    
+    # Open-GroundingDino specific
+    use_coco_eval: bool = False
+    nms_iou_threshold: float = 0.7
 
 
 # Default configuration

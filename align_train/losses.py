@@ -442,4 +442,171 @@ class GroundingDistillLoss(nn.Module):
         return indices
 
 
+class FeatureAlignmentLoss(nn.Module):
+    """
+    Feature alignment loss for aligning student (hs, ref) with teacher (hs, ref).
+    
+    Loss = λ_hs * MSE(student_hs, teacher_hs) + λ_ref * MSE(student_ref, teacher_ref)
+    
+    Uses MSE for both hs and ref since this is pure feature alignment (teacher is "ground truth").
+    """
+    
+    def __init__(
+        self,
+        hs_weight: float = 1.0,
+        ref_weight: float = 1.0,
+    ):
+        super().__init__()
+        
+        self.hs_weight = hs_weight
+        self.ref_weight = ref_weight
+    
+    def forward(
+        self,
+        student_hs: torch.Tensor,
+        teacher_hs: torch.Tensor,
+        student_ref: torch.Tensor,
+        teacher_ref: torch.Tensor,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Compute feature alignment loss.
+        
+        Args:
+            student_hs: Student hidden states [B, num_queries, hidden_dim]
+            teacher_hs: Teacher hidden states [B, num_queries, hidden_dim]
+            student_ref: Student reference points [B, num_queries, 4]
+            teacher_ref: Teacher reference points [B, num_queries, 4]
+            
+        Returns:
+            Dict with loss_hs, loss_ref, and loss_align (total)
+        """
+        # ============ HS Alignment Loss (MSE) ============
+        loss_hs = F.mse_loss(student_hs, teacher_hs.detach())
+        
+        # ============ Reference Point Alignment Loss (MSE) ============
+        loss_ref = F.mse_loss(student_ref, teacher_ref.detach())
+        
+        # Weighted losses
+        weighted_loss_hs = self.hs_weight * loss_hs
+        weighted_loss_ref = self.ref_weight * loss_ref
+        
+        return {
+            "loss_hs": weighted_loss_hs,
+            "loss_ref": weighted_loss_ref,
+            "loss_align": weighted_loss_hs + weighted_loss_ref,
+        }
 
+
+class CombinedAlignmentLoss(nn.Module):
+    """
+    Combined loss for VLA-GDINO alignment training.
+    
+    Total Loss = Feature Alignment + Detection Loss
+    
+    - Feature Alignment: Align student (hs, ref) with teacher
+    - Detection Loss: Use teacher's frozen heads with student features to compute bbox/class loss
+    
+    Gradient flow:
+    - Feature alignment → backprop to grounding module
+    - Detection loss → backprop to grounding module (teacher heads are frozen)
+    """
+    
+    def __init__(
+        self,
+        # Feature alignment weights
+        hs_weight: float = 1.0,
+        ref_weight: float = 1.0,
+        use_cosine_sim: bool = False,
+        # Detection loss weights
+        bbox_weight: float = 5.0,
+        giou_weight: float = 2.0,
+        class_weight: float = 1.0,
+        focal_alpha: float = 0.25,
+        focal_gamma: float = 2.0,
+        # KL distillation
+        kl_weight: float = 0.0,
+        temperature: float = 2.0,
+    ):
+        super().__init__()
+        
+        # Feature alignment loss
+        self.feature_loss = FeatureAlignmentLoss(
+            hs_weight=hs_weight,
+            ref_weight=ref_weight,
+            use_cosine_sim=use_cosine_sim,
+        )
+        
+        # Detection loss (reuse from GroundingDistillLoss)
+        self.detection_loss = GroundingDistillLoss(
+            kl_weight=kl_weight,
+            bbox_weight=bbox_weight,
+            giou_weight=giou_weight,
+            class_weight=class_weight,
+            temperature=temperature,
+            focal_alpha=focal_alpha,
+            focal_gamma=focal_gamma,
+            use_hungarian=True,
+        )
+    
+    def forward(
+        self,
+        student_hs: torch.Tensor,
+        teacher_hs: torch.Tensor,
+        student_ref: torch.Tensor,
+        teacher_ref: torch.Tensor,
+        student_pred_boxes: torch.Tensor,
+        student_pred_logits: torch.Tensor,
+        teacher_pred_boxes: Optional[torch.Tensor] = None,
+        teacher_pred_logits: Optional[torch.Tensor] = None,
+        targets: Optional[List[Dict[str, torch.Tensor]]] = None,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Compute combined alignment loss.
+        
+        Args:
+            student_hs: Student hidden states [B, num_queries, hidden_dim]
+            teacher_hs: Teacher hidden states [B, num_queries, hidden_dim]
+            student_ref: Student reference points [B, num_queries, 4]
+            teacher_ref: Teacher reference points [B, num_queries, 4]
+            student_pred_boxes: Student's predicted boxes (using teacher's head) [B, num_queries, 4]
+            student_pred_logits: Student's predicted logits (using teacher's head) [B, num_queries, text_len]
+            teacher_pred_boxes: Optional teacher predictions for KL loss
+            teacher_pred_logits: Optional teacher predictions for KL loss
+            targets: Ground truth annotations
+            
+        Returns:
+            Dict with all losses
+        """
+        losses = {}
+        
+        # ============ Feature Alignment Loss ============
+        feature_losses = self.feature_loss(
+            student_hs, teacher_hs,
+            student_ref, teacher_ref,
+        )
+        losses.update(feature_losses)
+        
+        # ============ Detection Loss ============
+        student_output = {
+            "pred_boxes": student_pred_boxes,
+            "pred_logits": student_pred_logits,
+        }
+        
+        teacher_output = None
+        if teacher_pred_boxes is not None and teacher_pred_logits is not None:
+            teacher_output = {
+                "pred_boxes": teacher_pred_boxes,
+                "pred_logits": teacher_pred_logits,
+            }
+        
+        detection_losses = self.detection_loss(
+            student_output=student_output,
+            teacher_output=teacher_output,
+            targets=targets,
+        )
+        losses.update(detection_losses)
+        
+        # ============ Total Loss ============
+        losses["loss_total"] = sum(losses.values())
+        
+        return losses
