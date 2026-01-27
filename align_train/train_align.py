@@ -504,11 +504,14 @@ def main(cfg: AlignTrainConfig):
         use_minivlm=True,
     )
     
+    # Get VLA module (handle DDP wrapper)
+    vla_module = vla.module if hasattr(vla, 'module') else vla
+    
     train_dataset = RLDSDataset(
         cfg.data_root_dir,
         cfg.dataset_name,
         batch_transform,
-        resize_resolution=(224, 224),
+        resize_resolution=tuple(vla_module.config.image_sizes),
         shuffle_buffer_size=cfg.shuffle_buffer_size,
         image_aug=cfg.image_aug,
     )
