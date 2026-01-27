@@ -2,9 +2,10 @@
 # Open-GroundingDino Fine-tuning on Libero Dataset
 #
 # Prerequisites:
-# 1. Download BERT weights to: weights/bert-base-uncased/
-# 2. Download pretrained model to: weights/groundingdino_swint_ogc.pth
-# 3. Prepare data in: data_processed/open_gdino_dataset/
+# 1. Download weights: bash download_weights.sh
+#    (or manually download BERT to: weights/bert-base-uncased/
+#     and pretrained model to: weights/groundingdino_swint_ogc.pth)
+# 2. Prepare data in: data_processed/open_gdino_dataset/
 #
 # Usage:
 #   bash train_libero.sh                    # Use all available GPUs
@@ -159,4 +160,5 @@ echo ""
 
 # Cleanup temporary configs
 rm -f "${TMP_CONFIG}" "${TMP_DATASETS}"
+
 
