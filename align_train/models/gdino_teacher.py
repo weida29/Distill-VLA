@@ -66,6 +66,10 @@ class GDINOTeacher(nn.Module):
         args = SLConfig.fromfile(config_path)
         args.device = self.device
         
+        # Set required attributes for PostProcess (even though we won't use it)
+        args.use_coco_eval = False
+        args.label_list = ["object"]  # Dummy label list for PostProcess
+        
         # Build model using registry
         build_func = MODULE_BUILD_FUNCS.get(args.modelname)
         model, criterion, postprocessors = build_func(args)
