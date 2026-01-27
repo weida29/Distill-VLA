@@ -110,7 +110,12 @@ def load_vla_model(cfg: AlignTrainConfig, device, dtype: torch.dtype) -> Tuple[n
     """Load VLA model following finetune.py pattern."""
     print("Loading VLA model...")
     
+    from prismatic.extern.hf.modeling_prismatic import OpenVLAForActionPrediction
+    
+    # Register OpenVLA model to HF Auto Classes (required for local model)
     AutoConfig.register("openvla", OpenVLAConfig)
+    AutoModelForVision2Seq.register(OpenVLAConfig, OpenVLAForActionPrediction)
+    
     config = AutoConfig.from_pretrained(str(PROJECT_ROOT / cfg.vla_config_path))
     vla = AutoModelForVision2Seq.from_config(config, torch_dtype=dtype)
     
