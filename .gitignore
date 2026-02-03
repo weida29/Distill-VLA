@@ -156,3 +156,29 @@ output/
 # Rollout videos and wandb logs
 rollouts/
 wandb/
+
+# Training outputs and logs
+runs/
+outputs/
+eval_logs/
+inference_results/
+logs/
+
+# Model weights directories
+weights/
+visual_teacher_ckpt/
+visual_teacher_ckpt2/
+
+# Pretrained model weights (keep configs)
+pretrained_models/**/
+!pretrained_models/configs/
+
+# Large model files
+*.pth
+*.bin
+*.safetensors
+!pretrained_models/configs/*.json
+
+# Temp files
+temp.sh
+*.bak
