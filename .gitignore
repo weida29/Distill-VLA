@@ -149,6 +149,9 @@ cache/
 data/
 data_processed/
 checkpoints/
+ckpt/
+output/
+
 
 # Rollout videos and wandb logs
 rollouts/

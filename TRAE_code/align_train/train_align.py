@@ -73,7 +73,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 def get_torch_dtype(use_bf16: bool) -> torch.dtype:
     """Get appropriate torch dtype. V100 doesn't support bf16."""
     if use_bf16 and torch.cuda.is_available() and torch.cuda.is_bf16_supported():
-        return torch.bfloat16
+            return torch.bfloat16
     return torch.float16
 
 
@@ -222,33 +222,33 @@ def train_step(
     next_actions_mask = get_next_actions_mask(ground_truth_token_ids)
     
     # Get multi-layer hidden states for action head
-    multi_layer_hidden_states = []
-    for item in output.hidden_states[0:]:
-        text_hidden_states = item[:, num_patches:-1]
-        actions_hidden_states = text_hidden_states[current_action_mask | next_actions_mask].reshape(
-            batch_size, 1, NUM_TOKENS, -1
-        ).to(dtype)
-        task_latten_states = item[:, :num_patches].reshape(batch_size, 1, num_patches, -1)
-        all_hidden_states = torch.cat((task_latten_states, actions_hidden_states), 2)
-        multi_layer_hidden_states.append(all_hidden_states)
-    multi_layer_hidden_states = torch.cat(multi_layer_hidden_states, dim=1)
-    
+        multi_layer_hidden_states = []
+        for item in output.hidden_states[0:]:
+            text_hidden_states = item[:, num_patches:-1]
+            actions_hidden_states = text_hidden_states[current_action_mask | next_actions_mask].reshape(
+                batch_size, 1, NUM_TOKENS, -1
+            ).to(dtype)
+            task_latten_states = item[:, :num_patches].reshape(batch_size, 1, num_patches, -1)
+            all_hidden_states = torch.cat((task_latten_states, actions_hidden_states), 2)
+            multi_layer_hidden_states.append(all_hidden_states)
+        multi_layer_hidden_states = torch.cat(multi_layer_hidden_states, dim=1)
+        
     # Action head prediction
-    action_head_module = action_head.module if hasattr(action_head, 'module') else action_head
-    predicted_actions = action_head_module.predict_action(
-        multi_layer_hidden_states,
+        action_head_module = action_head.module if hasattr(action_head, 'module') else action_head
+        predicted_actions = action_head_module.predict_action(
+            multi_layer_hidden_states,
         proprio=None,
-        proprio_projector=None,
-        phase="Training",
-    )
-    
-    action_loss = F.l1_loss(predicted_actions, ground_truth_actions)
-    
+            proprio_projector=None,
+            phase="Training",
+        )
+        
+        action_loss = F.l1_loss(predicted_actions, ground_truth_actions)
+        
     # Action metrics
     curr_action_l1 = F.l1_loss(predicted_actions[:, 0], ground_truth_actions[:, 0])
     next_actions_l1 = F.l1_loss(predicted_actions[:, 1:], ground_truth_actions[:, 1:])
-    metrics["curr_action_l1"] = curr_action_l1.item()
-    metrics["next_actions_l1"] = next_actions_l1.item()
+        metrics["curr_action_l1"] = curr_action_l1.item()
+        metrics["next_actions_l1"] = next_actions_l1.item()
     
     # ============ 3. Grounding Feature Alignment ============
     # Get grounding query embeddings and append to LLM
@@ -285,7 +285,7 @@ def train_step(
             attention_mask=combined_attention_mask,
             output_hidden_states=True,
             return_dict=True,
-        )
+    )
         
         # Extract grounding query hidden states (at the end of sequence)
         last_hidden_state = llm_output.hidden_states[-1]
@@ -301,7 +301,7 @@ def train_step(
         # Fallback: generic caption
         captions = ["pick up the object"] * batch_size
     
-    with torch.no_grad():
+            with torch.no_grad():
         teacher_outputs = gdino_teacher(
             batch["pixel_values"].to(dtype).to(device),
             captions
@@ -371,8 +371,8 @@ def save_checkpoint(
         vla_module.save_pretrained(checkpoint_dir / "vla")
         
         # Save action head
-        action_head_module = action_head.module if hasattr(action_head, 'module') else action_head
-        torch.save(action_head_module.state_dict(), checkpoint_dir / f"action_head_{log_step}.pt")
+            action_head_module = action_head.module if hasattr(action_head, 'module') else action_head
+            torch.save(action_head_module.state_dict(), checkpoint_dir / f"action_head_{log_step}.pt")
         
         # Save grounding module
         grounding_module_unwrapped = grounding_module.module if hasattr(grounding_module, 'module') else grounding_module
@@ -445,13 +445,13 @@ def main(cfg: AlignTrainConfig):
     print(f"LLM dim: {llm_dim}, Num patches: {num_patches}")
     
     # Create action head
-    action_head = L1RegressionActionHead(
-        input_dim=llm_dim,
-        hidden_dim=llm_dim,
-        action_dim=ACTION_DIM,
+        action_head = L1RegressionActionHead(
+            input_dim=llm_dim,
+            hidden_dim=llm_dim,
+            action_dim=ACTION_DIM,
         use_pro_version=True,
-    ).to(device).to(dtype)
-    print(f"Action Head: {sum(p.numel() for p in action_head.parameters()) / 1e6:.2f}M params")
+        ).to(device).to(dtype)
+        print(f"Action Head: {sum(p.numel() for p in action_head.parameters()) / 1e6:.2f}M params")
     
     # Create grounding module
     grounding_module = GroundingModule(
@@ -465,7 +465,7 @@ def main(cfg: AlignTrainConfig):
     # Wrap with DDP if distributed
     if distributed_state.num_processes > 1:
         vla = wrap_ddp(vla, device_id, find_unused=True)
-        action_head = wrap_ddp(action_head, device_id)
+            action_head = wrap_ddp(action_head, device_id)
         grounding_module = wrap_ddp(grounding_module, device_id)
     
     # ============ Loss & Optimizer ============
@@ -560,7 +560,7 @@ def main(cfg: AlignTrainConfig):
             cfg.use_wandb = False
     
     vla.train()
-    action_head.train()
+        action_head.train()
     grounding_module.train()
     optimizer.zero_grad()
     

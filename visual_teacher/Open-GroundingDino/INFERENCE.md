@@ -209,3 +209,6 @@ python tools/inference_on_a_image.py \
 - `infer_libero.sh`: 便捷推理脚本
 - `train_libero.sh`: 训练脚本（参考检查点路径）
 
+
+
+

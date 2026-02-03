@@ -5,7 +5,8 @@
   ],
   "auto_map": {
     "AutoConfig": "configuration_prismatic.OpenVLAConfig",
-    "AutoModelForVision2Seq": "modeling_prismatic.OpenVLAForActionPrediction"
+    "AutoModelForVision2Seq": "modeling_prismatic.OpenVLAForActionPrediction",
+    "AutoModelForVision2Seq_align": "align_modeling_prismatic.OpenVLAForActionPrediction"
   },
   "hf_llm_id": "",
   "image_resize_strategy": "resize-naive",
