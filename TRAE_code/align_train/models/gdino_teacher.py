@@ -62,13 +62,7 @@ class GDINOTeacher(nn.Module):
         from util.slconfig import SLConfig
         from models.registry import MODULE_BUILD_FUNCS
         
-        # Convert relative paths to absolute paths
-        if not os.path.isabs(config_path):
-            config_path = str(PROJECT_ROOT / config_path)
-        if not os.path.isabs(checkpoint_path):
-            checkpoint_path = str(PROJECT_ROOT / checkpoint_path)
-        
-        # Load config
+        # Load config (paths are already absolute from run script)
         args = SLConfig.fromfile(config_path)
         args.device = self.device
         
