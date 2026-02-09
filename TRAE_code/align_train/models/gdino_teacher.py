@@ -14,7 +14,8 @@ import torch
 import torch.nn as nn
 
 # Add Open-GroundingDino to path
-PROJECT_ROOT = Path(__file__).parent.parent.parent
+# gdino_teacher.py is at TRAE_code/align_train/models/, so we need 4 levels up to reach project root
+PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 GDINO_PATH = PROJECT_ROOT / "visual_teacher" / "Open-GroundingDino"
 sys.path.insert(0, str(GDINO_PATH))
 
@@ -61,8 +62,13 @@ class GDINOTeacher(nn.Module):
         from util.slconfig import SLConfig
         from models.registry import MODULE_BUILD_FUNCS
         
+        # Convert relative paths to absolute paths
+        if not os.path.isabs(config_path):
+            config_path = str(PROJECT_ROOT / config_path)
+        if not os.path.isabs(checkpoint_path):
+            checkpoint_path = str(PROJECT_ROOT / checkpoint_path)
+        
         # Load config
-        config_path = str(PROJECT_ROOT / config_path)
         args = SLConfig.fromfile(config_path)
         args.device = self.device
         
@@ -74,8 +80,7 @@ class GDINOTeacher(nn.Module):
         build_func = MODULE_BUILD_FUNCS.get(args.modelname)
         model, criterion, postprocessors = build_func(args)
         
-        # Load checkpoint
-        checkpoint_path = str(PROJECT_ROOT / checkpoint_path)
+        # Load checkpoint - use path directly (can be absolute or relative)
         if os.path.exists(checkpoint_path):
             print(f"Loading GDINO teacher from: {checkpoint_path}")
             checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
