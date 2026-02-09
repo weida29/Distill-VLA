@@ -1,0 +1,17 @@
+{
+  "train": [
+    {
+      "root": "/tmp/Distill-VLA/data_processed/open_gdino_dataset/images/",
+      "anno": "/tmp/Distill-VLA/data_processed/open_gdino_dataset/train.jsonl",
+      "dataset_mode": "odvg"
+    }
+  ],
+  "val": [
+    {
+      "root": "/tmp/Distill-VLA/data_processed/open_gdino_dataset/images/",
+      "anno": "/tmp/Distill-VLA/data_processed/open_gdino_dataset/val_coco.json",
+      "label_map": null,
+      "dataset_mode": "coco"
+    }
+  ]
+}
