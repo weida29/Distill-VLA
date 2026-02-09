@@ -34,8 +34,8 @@ torchrun --standalone --nnodes=1 --nproc_per_node=1 finetune_align_action_query.
     --use_visual_teacher=true \
     --use_action_query_alignment=true \
     --action_query_alignment_dropout=0.1 \
-    --visual_teacher_config="../visual_teacher/Open-GroundingDino/config/cfg_odvg.py" \
-    --visual_teacher_checkpoint="../checkpoints/open_gdino_finetuned/checkpoint_best_regular.pth" \
+    --visual_teacher_config="/tmp/Distill-VLA/visual_teacher/Open-GroundingDino/config/cfg_odvg.py" \
+    --visual_teacher_checkpoint="/tmp/Distill-VLA/checkpoints/open_gdino_finetuned/checkpoint_best_regular.pth" \
     --action_loss_weight=1.0 \
     --alignment_loss_weight=0.5 \
     --hs_weight=1.0 \
