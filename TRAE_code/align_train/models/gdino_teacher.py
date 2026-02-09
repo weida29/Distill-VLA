@@ -15,7 +15,7 @@ import torch.nn as nn
 
 # Add Open-GroundingDino to path
 # gdino_teacher.py is at TRAE_code/align_train/models/, so we need 4 levels up to reach project root
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+PROJECT_ROOT = Path('/tmp/Distill-VLA')
 GDINO_PATH = PROJECT_ROOT / "visual_teacher" / "Open-GroundingDino"
 sys.path.insert(0, str(GDINO_PATH))
 
