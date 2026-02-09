@@ -147,6 +147,9 @@ class GDINOTeacher(nn.Module):
         
         device = images.device
         
+        # Convert images to float32 to avoid dtype mismatch with GDINO
+        images = images.to(torch.float32)
+        
         # ============ Text Encoding ============
         tokenized = self.tokenizer(
             captions, 
