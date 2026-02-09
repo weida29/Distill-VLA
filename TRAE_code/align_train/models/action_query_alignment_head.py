@@ -6,6 +6,7 @@ Action Query Alignment Head for mapping VLA action queries to GDINO space.
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class ActionQueryAlignmentHead(nn.Module):
