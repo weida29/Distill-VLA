@@ -69,6 +69,7 @@ from align_train.losses import FeatureAlignmentLoss
 
 
 
+
 # Sane Defaults
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -284,7 +285,7 @@ def init_module(
         cfg (FinetuneConfig): Training configuration.
         device_id (str): Device ID.
         module_args (dict): Args for initializing the module.
-        to_bf16 (bool): Whether to convert to torch.bfloat16 data type.
+        to_bf16 (bool): Whether to convert to torch.float32 data type.
         find_unused_params (bool): Whether to detect parameters without gradients in distributed training.
 
     Returns:
@@ -299,7 +300,7 @@ def init_module(
         print('loaded!!!!!!!!!')
 
     if to_bf16:
-        module = module.to(torch.bfloat16)
+        module = module.to(torch.float32)
     module = module.to(device_id)
 
     return wrap_ddp(module, device_id, find_unused_params)
@@ -353,15 +354,15 @@ def run_forward_pass(
     metrics = {}
 
     # Get ground-truth action labels
-    ground_truth_actions = batch["actions"].to(device_id).to(torch.bfloat16)
+    ground_truth_actions = batch["actions"].to(device_id).to(torch.float32)
     noise, noisy_actions, diffusion_timestep_embeddings = None, None, None
 
     # VLA forward pass
-    with torch.autocast("cuda", dtype=torch.bfloat16):
+    with torch.autocast("cuda", dtype=torch.float32):
         output: CausalLMOutputWithPast = vla(
             input_ids=batch["input_ids"].to(device_id),
             attention_mask=batch["attention_mask"].to(device_id),
-            pixel_values=batch["pixel_values"].to(torch.bfloat16).to(device_id),
+            pixel_values=batch["pixel_values"].to(torch.float32).to(device_id),
             labels=batch["labels"],
             output_hidden_states=True,
             proprio=batch["proprio"] if use_proprio else None,
@@ -426,8 +427,8 @@ def run_forward_pass(
             text_hidden_states = item[:, num_patches:-1]
             # Get hidden states for action portion of response
             batch_size = batch["input_ids"].shape[0]
-            # actions_hidden_states = text_hidden_states[:, -1, :].reshape(batch_size, 1, -1).to(torch.bfloat16)
-            actions_hidden_states = text_hidden_states[current_action_mask | next_actions_mask].reshape(batch_size, 1,NUM_TOKENS, -1).to(torch.bfloat16)
+            # actions_hidden_states = text_hidden_states[:, -1, :].reshape(batch_size, 1, -1).to(torch.float32)
+            actions_hidden_states = text_hidden_states[current_action_mask | next_actions_mask].reshape(batch_size, 1,NUM_TOKENS, -1).to(torch.float32)
             task_latten_states = item[:, :num_patches].reshape(batch_size, 1, num_patches , -1)
             all_hidden_states = torch.cat((task_latten_states, actions_hidden_states),2)
             multi_layer_hidden_states.append(all_hidden_states)
@@ -450,7 +451,7 @@ def run_forward_pass(
             # hidden_states[-1]: [B, seq_len, 896], visual patches are at positions 1:num_patches+1
             last_hidden = output.hidden_states[-1]  # [B, seq_len, 896]
             # Note: position 0 is BOS, positions 1 to num_patches are visual patches
-            visual_hidden = last_hidden[:, 1:num_patches+1, :].to(torch.bfloat16)  # [B, num_patches, 896]
+            visual_hidden = last_hidden[:, 1:num_patches+1, :].to(torch.float32)  # [B, num_patches, 896]
             
             # Project to GDINO space using GroundingModule
             student_hs, student_ref = grounding_module.module(visual_hidden)  # [B, num_patches, 256], [B, num_patches, 4]
@@ -458,16 +459,25 @@ def run_forward_pass(
             # GDINO Teacher forward (only main view image)
             with torch.no_grad():
                 # Get main view image (first 3 channels if using fused backbone with 2 images)
-                pixel_values = batch["pixel_values"].to(torch.bfloat16).to(device_id)
+                pixel_values = batch["pixel_values"].to(torch.float32).to(device_id)
                 # For fused backbone: [B, 6, H, W] for single image or [B, 12, H, W] for 2 images
                 # Extract only the first 3 channels (main view for SigLIP)
                 main_view_image = pixel_values[:, :3, :, :]  # [B, 3, H, W]
                 
                 # Get task description as caption (use default if not available)
+                # GroundingDINO expects captions ending with ". " for proper tokenization
                 batch_size_current = main_view_image.shape[0]
-                captions = batch.get("task_description", ["pick up the object"] * batch_size_current)
-                if captions is None or len(captions) == 0:
-                    captions = ["pick up the object"] * batch_size_current
+                captions = batch.get("task_description", None)
+                
+                # Ensure captions is a proper list of strings
+                if captions is None:
+                    captions = ["object."] * batch_size_current
+                elif isinstance(captions, (list, tuple)):
+                    # Convert to list of strings and ensure proper format
+                    captions = [str(c) if c else "object." for c in captions]
+                    captions = [c if c.endswith(".") else c + "." for c in captions]
+                else:
+                    captions = ["object."] * batch_size_current
                 
                 # Teacher forward
                 teacher_out = gdino_teacher(
@@ -515,9 +525,9 @@ def run_forward_pass(
             predicted_next_actions = predicted_actions[:, 1:]
             curr_action_l1_loss = torch.nn.L1Loss()(ground_truth_curr_action, predicted_curr_action)
             next_actions_l1_loss = torch.nn.L1Loss()(ground_truth_next_actions, predicted_next_actions)
-            if compute_diffusion_l1:
-                print('curr: ',curr_action_l1_loss.item())
-                # print('next: ',next_actions_l1_loss.item())
+            # Debug prints commented out - metrics are now logged properly
+            # if compute_diffusion_l1:
+            #     print('curr: ',curr_action_l1_loss.item())
 
             metrics.update(
                 {
@@ -665,15 +675,15 @@ def save_training_checkpoint(
     # Note: Can be very slow on some devices; if so, we recommend merging offline
     if cfg.use_lora and cfg.merge_lora_during_training:
         if cfg.use_minivlm:
-            config = AutoConfig.from_pretrained("pretrained_models/configs/config.json")
-            base_vla = AutoModelForVision2Seq.from_config(config, torch_dtype=torch.bfloat16)  # Create a new model with configuration, the parameters are randomly initialized
+            config = AutoConfig.from_pretrained(cfg.config_file_path)
+            base_vla = AutoModelForVision2Seq.from_config(config, torch_dtype=torch.float32)  # Create a new model with configuration, the parameters are randomly initialized
             # print(new_state_dict['action_queries.weight'])
             new_state_dict['action_queries.weight'] = vla.state_dict()['module.base_model.model.action_queries.weight'].cpu()
             missing_keys, unexpected_keys = base_vla.load_state_dict(new_state_dict, strict=False)
             
         else:
             base_vla = AutoModelForVision2Seq.from_pretrained(
-            cfg.config_file_path, torch_dtype=torch.bfloat16, low_cpu_mem_usage=False, trust_remote_code=False
+            cfg.config_file_path, torch_dtype=torch.float32, low_cpu_mem_usage=False, trust_remote_code=False
         )
 
 
@@ -823,7 +833,24 @@ def finetune(cfg: FinetuneConfig) -> None:
 
     # Initialize wandb logging
     if distributed_state.is_main_process:
-        wandb.init(project=cfg.wandb_project, name=f"ft+{run_id}", mode="offline")
+        # Use online mode if wandb_entity is set, otherwise offline
+        wandb_mode = "online" if cfg.wandb_entity != "your-wandb-entity" else "offline"
+        wandb.init(
+            project=cfg.wandb_project, 
+            entity=cfg.wandb_entity if wandb_mode == "online" else None,
+            name=f"ft+{run_id}", 
+            mode=wandb_mode,
+            config=vars(cfg)  # Log all config parameters
+        )
+        print(f"WandB initialized in {wandb_mode} mode")
+        
+        # Initialize local CSV log file
+        log_dir = run_dir / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        csv_log_path = log_dir / "training_log.csv"
+        with open(csv_log_path, "w") as f:
+            f.write("step,loss_total,loss_action,loss_align,loss_hs,loss_ref,lr\n")
+        print(f"Local CSV log: {csv_log_path}")
 
     # Print detected constants
     print(
@@ -880,8 +907,8 @@ def finetune(cfg: FinetuneConfig) -> None:
                 hf_token=hf_token,
                 load_for_training=True,
                 )
-        config = AutoConfig.from_pretrained("pretrained_models/configs/config.json")
-        vla = AutoModelForVision2Seq.from_config(config, torch_dtype=torch.bfloat16).to(device_id)  # Create a new model with configuration, the parameters are randomly initialized
+        config = AutoConfig.from_pretrained(cfg.config_file_path)
+        vla = AutoModelForVision2Seq.from_config(config, torch_dtype=torch.float32).to(device_id)  # Create a new model with configuration, the parameters are randomly initialized
         # for name, param in model.named_parameters():
         #     print(f"{name}: {param.shape}")
         replace_map = [
@@ -914,7 +941,7 @@ def finetune(cfg: FinetuneConfig) -> None:
         RAW_STATE_DICT ={}
         vla = AutoModelForVision2Seq.from_pretrained(
             cfg.config_file_path,
-            torch_dtype=torch.bfloat16,
+            torch_dtype=torch.float32,
             low_cpu_mem_usage=False,
             trust_remote_code=False,
             ).to(device_id)
@@ -999,6 +1026,7 @@ def finetune(cfg: FinetuneConfig) -> None:
         print("Initializing Visual Teacher Alignment components...")
         
         # Initialize GDINO Teacher (frozen)
+        # Pass paths directly - they can be absolute or relative (e.g., ../visual_teacher/...)
         gdino_teacher = GDINOTeacher(
             config_path=cfg.visual_teacher_config,
             checkpoint_path=cfg.visual_teacher_checkpoint,
@@ -1014,7 +1042,7 @@ def finetune(cfg: FinetuneConfig) -> None:
             llm_dim=vla.module.llm_dim,      # 896
             gdino_dim=cfg.gdino_dim,         # 256
             dropout=cfg.grounding_dropout,
-        ).to(torch.bfloat16).to(device_id)
+        ).to(torch.float32).to(device_id)
         grounding_module = wrap_ddp(grounding_module, device_id)
         count_parameters(grounding_module, "grounding_module")
         
@@ -1195,10 +1223,28 @@ def finetune(cfg: FinetuneConfig) -> None:
             # Compute smoothened train metrics
             smoothened_metrics = compute_smoothened_metrics(recent_metrics)
 
-            # Push Metrics to W&B (every wandb_log_freq gradient steps)
+            # Push Metrics to W&B and local CSV (every wandb_log_freq gradient steps)
             log_step = gradient_step_idx if not cfg.resume else cfg.resume_step + gradient_step_idx
             if distributed_state.is_main_process and log_step % cfg.wandb_log_freq == 0:
                 log_metrics_to_wandb(smoothened_metrics, "VLA Train", log_step, wandb)
+                
+                # Write to local CSV log
+                csv_log_path = run_dir / "logs" / "training_log.csv"
+                current_lr = scheduler.get_last_lr()[0] if scheduler else cfg.learning_rate
+                with open(csv_log_path, "a") as f:
+                    f.write(f"{log_step},{smoothened_metrics.get('loss_value', 0):.6f},"
+                            f"{smoothened_metrics.get('loss_action', 0):.6f},"
+                            f"{smoothened_metrics.get('loss_align', 0):.6f},"
+                            f"{smoothened_metrics.get('loss_hs', 0):.6f},"
+                            f"{smoothened_metrics.get('loss_ref', 0):.6f},"
+                            f"{current_lr:.8f}\n")
+                
+                # Print formatted loss summary
+                print(f"\n[Step {log_step}] "
+                      f"Total: {smoothened_metrics.get('loss_value', 0):.4f} | "
+                      f"Action: {smoothened_metrics.get('loss_action', 0):.4f} | "
+                      f"Align: {smoothened_metrics.get('loss_align', 0):.4f} "
+                      f"(HS: {smoothened_metrics.get('loss_hs', 0):.4f}, Ref: {smoothened_metrics.get('loss_ref', 0):.4f})")
 
             # [If applicable] Linearly warm up learning rate from 10% to 100% of original
             if cfg.lr_warmup_steps > 0:

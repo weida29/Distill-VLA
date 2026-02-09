@@ -15,7 +15,7 @@ import torch.nn as nn
 
 # Add Open-GroundingDino to path
 # gdino_teacher.py is at TRAE_code/align_train/models/, so we need 4 levels up to reach project root
-PROJECT_ROOT = Path('/tmp/Distill-VLA')
+PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 GDINO_PATH = PROJECT_ROOT / "visual_teacher" / "Open-GroundingDino"
 sys.path.insert(0, str(GDINO_PATH))
 
@@ -62,7 +62,7 @@ class GDINOTeacher(nn.Module):
         from util.slconfig import SLConfig
         from models.registry import MODULE_BUILD_FUNCS
         
-        # Load config (paths are already absolute from run script)
+        # Load config - use path directly (can be absolute or relative like ../visual_teacher/...)
         args = SLConfig.fromfile(config_path)
         args.device = self.device
         
@@ -146,9 +146,6 @@ class GDINOTeacher(nn.Module):
         import torch.nn.functional as F
         
         device = images.device
-        
-        # Convert images to float32 to avoid dtype mismatch with GDINO
-        images = images.to(torch.float32)
         
         # ============ Text Encoding ============
         tokenized = self.tokenizer(

@@ -287,8 +287,6 @@ class PrismaticCausalLMOutputWithPast(ModelOutput):
 
     # Additions for VLMs
     projector_features: Optional[torch.FloatTensor] = None
-    # Addition for grounding features alignment
-    grounding_hiddenstates: Optional[torch.FloatTensor] = None
 
 
 
@@ -373,20 +371,12 @@ class PrismaticForConditionalGeneration(PrismaticPreTrainedModel):
         self.pad_token_id = config.pad_token_id
         self.llm_dim = config.text_config.hidden_size
         
-        # Action query token
+        #Action query token
         self.action_queries = nn.Embedding(NUM_TOKENS, self.llm_dim)
         self.action_queries.weight.data.zero_()
         
-        # Grounding query token for alignment with visual teacher
-        # Using 100 learnable tokens to reduce interference with VLA's action tokens
-        self.grounding_queries = nn.Embedding(100, self.llm_dim)
+        self.grounding_queries = nn.Embedding(NUM_TOKENS, self.llm_dim)
         self.grounding_queries.weight.data.zero_()
-        
-        # Linear layer to map to intermediate representation
-        self.grounding_intermediate = nn.Linear(self.llm_dim, self.llm_dim)
-        
-        # Learnable variations to expand 100 tokens to 900 to match GroundingDINO
-        self.expansion_variations = nn.Parameter(torch.randn(9, self.llm_dim) * 0.01)
 
         # HF Boilerplate =>> initializes weights via `_init_weights()` and sets gradient checkpointing
         self.post_init()
@@ -568,9 +558,6 @@ class PrismaticForConditionalGeneration(PrismaticPreTrainedModel):
 
         # Instantiate Placeholder for Projector Features
         projected_patch_embeddings = None
-        
-        # Initialize grounding_hiddenstates for all paths
-        grounding_hiddenstates = None
 
         # === Handle Generation with Cache (`input_ids.shape[1] == 1`) =>> requires `past_keys_values` ===
         if input_ids.shape[1] == 1:
@@ -636,25 +623,6 @@ class PrismaticForConditionalGeneration(PrismaticPreTrainedModel):
 
                 action_queries = self.action_queries.weight  # (1, h)
                 action_queries = action_queries.view(1, action_queries.shape[0], action_queries.shape[1]).repeat(input_embeddings.shape[0], 1, 1)  # (b, chunk_size, h)
-                
-                # Extract grounding hidden states for visual teacher alignment
-                # Get 100 learnable tokens: (100, llm_dim)
-                base_grounding_queries = self.grounding_queries.weight  # (100, llm_dim)
-                
-                # Transform through intermediate layer: (100, llm_dim)
-                transformed_queries = self.grounding_intermediate(base_grounding_queries)
-                
-                # Expand to 900 by repeating and transforming to match GroundingDINO teacher
-                # We tile the 100 queries to 900 by repeating and adding learned positional variations
-                expanded_queries = transformed_queries.repeat(9, 1)  # (900, llm_dim) by repeating 9 times
-                
-                # Apply learned variations to each group of 100 to create 900 unique queries
-                expanded_queries = expanded_queries.view(9, 100, -1) + self.expansion_variations.unsqueeze(1).unsqueeze(1)
-                expanded_queries = expanded_queries.view(900, -1)  # (900, llm_dim)
-                
-                # Repeat for batch: (batch_size, 900, llm_dim)
-                grounding_queries = expanded_queries.unsqueeze(0).repeat(input_embeddings.shape[0], 1, 1)
-                
                 all_actions_mask = self._process_action_masks(labels)
                 input_embeddings = self._replace_input_embeddings(
                     input_embeddings, all_actions_mask, action_queries)
@@ -663,25 +631,6 @@ class PrismaticForConditionalGeneration(PrismaticPreTrainedModel):
             else:
                 action_queries = self.action_queries.weight  # (1, h)
                 action_queries = action_queries.view(1, action_queries.shape[0], action_queries.shape[1]).repeat(input_embeddings.shape[0], 1, 1)  # (b, chunk_size, h)
-                
-                # Extract grounding hidden states for visual teacher alignment
-                # Get 100 learnable tokens: (100, llm_dim)
-                base_grounding_queries = self.grounding_queries.weight  # (100, llm_dim)
-                
-                # Transform through intermediate layer: (100, llm_dim)
-                transformed_queries = self.grounding_intermediate(base_grounding_queries)
-                
-                # Expand to 900 by repeating and transforming to match GroundingDINO teacher
-                # We tile the 100 queries to 900 by repeating and adding learned positional variations
-                expanded_queries = transformed_queries.repeat(9, 1)  # (900, llm_dim) by repeating 9 times
-                
-                # Apply learned variations to each group of 100 to create 900 unique queries
-                expanded_queries = expanded_queries.view(9, 100, -1) + self.expansion_variations.unsqueeze(1).unsqueeze(1)
-                expanded_queries = expanded_queries.view(900, -1)  # (900, llm_dim)
-                
-                # Repeat for batch: (batch_size, 900, llm_dim)
-                grounding_queries = expanded_queries.unsqueeze(0).repeat(input_embeddings.shape[0], 1, 1)
-                
                 all_actions_mask = self._process_action_masks(labels)
                 input_embeddings = self._replace_input_embeddings(
                     input_embeddings, all_actions_mask, action_queries)
@@ -706,11 +655,7 @@ class PrismaticForConditionalGeneration(PrismaticPreTrainedModel):
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
                 return_dict=return_dict,
-                )
-            
-            # Extract grounding hidden states for visual teacher alignment
-            if 'grounding_queries' in locals():
-                grounding_hiddenstates = grounding_queries 
+                ) 
 
         # === Otherwise =>> Assume Invalid! ===
         elif (input_ids.shape[0] != pixel_values.shape[0]) or (inputs_embeds.shape[0] != pixel_values.shape[0]):
@@ -735,18 +680,12 @@ class PrismaticForConditionalGeneration(PrismaticPreTrainedModel):
 
             return language_model_output
 
-        # Prepare grounding hidden states for visual teacher alignment
-        grounding_hiddenstates_out = None
-        if 'grounding_hiddenstates' in locals():
-            grounding_hiddenstates_out = grounding_hiddenstates
-
         return PrismaticCausalLMOutputWithPast(
             loss=language_model_output.loss,
             past_key_values=language_model_output.past_key_values,
             hidden_states=language_model_output.hidden_states,
             attentions=language_model_output.attentions,
             projector_features=projected_patch_embeddings,
-            grounding_hiddenstates=grounding_hiddenstates_out,
             )
 
 
