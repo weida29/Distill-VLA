@@ -64,8 +64,63 @@ import json
 from PIL import Image
 import numpy as np
 from align_train.config import AlignTrainConfig
-from align_train.models import GroundingModule, GDINOTeacher, ActionQueryAlignmentHead
-from align_train.losses import FeatureAlignmentLoss
+from align_train.models import GDINOTeacher, ActionQueryAlignmentHead
+
+class FeatureAlignmentLoss(nn.Module):
+    """
+    特征对齐损失类：学生与教师特征维度完全一致，直接计算MSE对齐损失
+    支持hs/ref损失的加权求和，适配你的权重配置逻辑
+    """
+    def __init__(self, hs_weight: float = 1.0, ref_weight: float = 1.0):
+        super().__init__()
+        # 保存hs和ref特征的损失权重（对应你的命令行参数配置）
+        self.hs_weight = hs_weight
+        self.ref_weight = ref_weight
+
+    def forward(
+        self,
+        student_hs: torch.Tensor,  # [B, N, D1] 学生高维特征（与teacher_hs维度完全一致）
+        teacher_hs: torch.Tensor,  # [B, N, D1] 教师高维特征
+        student_ref: torch.Tensor, # [B, N, D2] 学生参考特征（与teacher_ref维度完全一致）
+        teacher_ref: torch.Tensor  # [B, N, D2] 教师参考特征
+    ) -> dict:
+        """
+        前向传播计算对齐损失（无维度池化，直接MSE）
+        返回值：包含loss_hs/loss_ref/loss_align的字典，完全适配你的调用逻辑
+        """
+        # 1. 维度校验：确保学生/教师对应特征维度完全一致
+        self._validate_input_shapes(student_hs, teacher_hs, student_ref, teacher_ref)
+        
+        # 2. 直接计算MSE损失（无需维度对齐）
+        loss_hs = F.mse_loss(student_hs, teacher_hs)  # hs特征对齐损失
+        loss_ref = F.mse_loss(student_ref, teacher_ref)  # ref特征对齐损失
+        
+        # 3. 加权求和得到总对齐损失（权重与你的配置一致）
+        loss_align = self.hs_weight * loss_hs + self.ref_weight * loss_ref
+        
+        # 返回与你代码匹配的损失字典
+        return {
+            "loss_hs": loss_hs,
+            "loss_ref": loss_ref,
+            "loss_align": loss_align
+        }
+
+    def _validate_input_shapes(
+        self,
+        student_hs: torch.Tensor,
+        teacher_hs: torch.Tensor,
+        student_ref: torch.Tensor,
+        teacher_ref: torch.Tensor
+    ):
+        """校验输入维度：学生/教师对应特征维度必须完全一致"""
+        if student_hs.shape != teacher_hs.shape:
+            raise ValueError(
+                f"student_hs与teacher_hs维度不匹配！student_hs:{student_hs.shape}, teacher_hs:{teacher_hs.shape}"
+            )
+        if student_ref.shape != teacher_ref.shape:
+            raise ValueError(
+                f"student_ref与teacher_ref维度不匹配！student_ref:{student_ref.shape}, teacher_ref:{teacher_ref.shape}"
+            )
 
 
 
@@ -726,7 +781,6 @@ def run_validation(
     # Visual teacher alignment components
     gdino_teacher=None,
     action_query_alignment_head=None,
-    grounding_module=None,
     alignment_criterion=None,
 ) -> None:
     """
@@ -1031,7 +1085,6 @@ def finetune(cfg: FinetuneConfig) -> None:
 
     # ============ Visual Teacher Alignment Components ============
     gdino_teacher = None
-    grounding_module = None
     alignment_criterion = None
     action_query_alignment_head = None
     
@@ -1221,7 +1274,6 @@ def finetune(cfg: FinetuneConfig) -> None:
                 cfg=cfg,
                 gdino_teacher=gdino_teacher,
                 action_query_alignment_head=action_query_alignment_head,
-                grounding_module=grounding_module,
                 alignment_criterion=alignment_criterion,
             )
 
@@ -1303,7 +1355,7 @@ def finetune(cfg: FinetuneConfig) -> None:
                     train_dataset=train_dataset,
                     distributed_state=distributed_state,
                     new_state_dict=RAW_STATE_DICT,
-                    grounding_module=grounding_module,
+                    action_query_alignment_head=action_query_alignment_head,
                 )
 
             # Test model on validation set
