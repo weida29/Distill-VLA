@@ -40,6 +40,6 @@ torchrun --standalone --nnodes=1 --nproc_per_node=1 finetune_align_action_query.
     --alignment_loss_weight=0.5 \
     --hs_weight=1.0 \
     --ref_weight=1.0 \
-    --wandb_entity="weida-debug" \
     --wandb_project="vla-alignment" \
+    --wandb_entity="weida-debug" \
     --run_id_note="VLA-ActionQueryAlign--${data_name}--${current_time}"

@@ -68,37 +68,41 @@ from align_train.models import GDINOTeacher, ActionQueryAlignmentHead
 
 class FeatureAlignmentLoss(nn.Module):
     """
-    特征对齐损失类：学生与教师特征维度完全一致，直接计算MSE对齐损失
-    支持hs/ref损失的加权求和，适配你的权重配置逻辑
+    Feature Alignment Loss Module:
+    Computes MSE-based alignment loss between student and teacher features where 
+    their dimensions are exactly matched (no dimension pooling required).
+    Supports weighted summation of hs/ref losses to align with weight configuration logic.
     """
     def __init__(self, hs_weight: float = 1.0, ref_weight: float = 1.0):
         super().__init__()
-        # 保存hs和ref特征的损失权重（对应你的命令行参数配置）
+        # Save loss weights for hs/ref features (corresponds to CLI argument configuration)
         self.hs_weight = hs_weight
         self.ref_weight = ref_weight
 
     def forward(
         self,
-        student_hs: torch.Tensor,  # [B, N, D1] 学生高维特征（与teacher_hs维度完全一致）
-        teacher_hs: torch.Tensor,  # [B, N, D1] 教师高维特征
-        student_ref: torch.Tensor, # [B, N, D2] 学生参考特征（与teacher_ref维度完全一致）
-        teacher_ref: torch.Tensor  # [B, N, D2] 教师参考特征
+        student_hs: torch.Tensor,  # [B, N, D1] Student high-dimensional features (exact shape match with teacher_hs)
+        teacher_hs: torch.Tensor,  # [B, N, D1] Teacher high-dimensional features
+        student_ref: torch.Tensor, # [B, N, D2] Student reference features (exact shape match with teacher_ref)
+        teacher_ref: torch.Tensor  # [B, N, D2] Teacher reference features
     ) -> dict:
         """
-        前向传播计算对齐损失（无维度池化，直接MSE）
-        返回值：包含loss_hs/loss_ref/loss_align的字典，完全适配你的调用逻辑
+        Forward pass to compute alignment loss (no dimension pooling, direct MSE calculation).
+        
+        Returns:
+            Dictionary containing loss_hs/loss_ref/loss_align, fully compatible with existing calling logic.
         """
-        # 1. 维度校验：确保学生/教师对应特征维度完全一致
+        # 1. Dimension validation: Ensure student/teacher corresponding features have identical shapes
         self._validate_input_shapes(student_hs, teacher_hs, student_ref, teacher_ref)
         
-        # 2. 直接计算MSE损失（无需维度对齐）
-        loss_hs = F.mse_loss(student_hs, teacher_hs)  # hs特征对齐损失
-        loss_ref = F.mse_loss(student_ref, teacher_ref)  # ref特征对齐损失
+        # 2. Compute MSE loss directly (no dimension alignment needed)
+        loss_hs = F.mse_loss(student_hs, teacher_hs)  # Alignment loss for hs features
+        loss_ref = F.mse_loss(student_ref, teacher_ref)  # Alignment loss for ref features
         
-        # 3. 加权求和得到总对齐损失（权重与你的配置一致）
+        # 3. Weighted sum to get total alignment loss (matching your weight configuration)
         loss_align = self.hs_weight * loss_hs + self.ref_weight * loss_ref
         
-        # 返回与你代码匹配的损失字典
+        # Return loss dictionary matching your code's expected format
         return {
             "loss_hs": loss_hs,
             "loss_ref": loss_ref,
@@ -112,14 +116,14 @@ class FeatureAlignmentLoss(nn.Module):
         student_ref: torch.Tensor,
         teacher_ref: torch.Tensor
     ):
-        """校验输入维度：学生/教师对应特征维度必须完全一致"""
+        """Validate input dimensions: student/teacher corresponding features must have identical shapes"""
         if student_hs.shape != teacher_hs.shape:
             raise ValueError(
-                f"student_hs与teacher_hs维度不匹配！student_hs:{student_hs.shape}, teacher_hs:{teacher_hs.shape}"
+                f"student_hs and teacher_hs shape mismatch! student_hs:{student_hs.shape}, teacher_hs:{teacher_hs.shape}"
             )
         if student_ref.shape != teacher_ref.shape:
             raise ValueError(
-                f"student_ref与teacher_ref维度不匹配！student_ref:{student_ref.shape}, teacher_ref:{teacher_ref.shape}"
+                f"student_ref and teacher_ref shape mismatch! student_ref:{student_ref.shape}, teacher_ref:{teacher_ref.shape}"
             )
 
 
