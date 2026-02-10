@@ -61,7 +61,7 @@ class DistributedOverwatch:
         self.critical = self.logger.critical
 
         # Logging Defaults =>> only Log `INFO` on Main Process, `ERROR` on others!
-        self.logger.setLevel(logging.INFO if getattr(self.distributed_state, 'is_main_process', True) else logging.ERROR)
+        self.logger.setLevel(logging.INFO if self.distributed_state.is_main_process else logging.ERROR)
 
     @property
     def rank_zero_only(self) -> Callable[..., Any]:
@@ -80,7 +80,7 @@ class DistributedOverwatch:
         return self.distributed_state.local_main_process_first
 
     def is_rank_zero(self) -> bool:
-        return getattr(self.distributed_state, 'is_main_process', True)
+        return self.distributed_state.is_main_process
 
     def rank(self) -> int:
         return self.distributed_state.process_index
