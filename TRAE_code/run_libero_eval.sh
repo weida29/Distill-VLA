@@ -9,24 +9,24 @@
 # - LIBERO-Goal
 # - LIBERO-Long (LIBERO-10)
 #
-# Usage:
-#   bash run_libero_eval.sh [task_suite] [checkpoint_path] [gpu_id]
-#
-# Examples:
-#   bash run_libero_eval.sh spatial outputs/VLA-Adapter--libero_spatial_no_noops--20250210_120000/ 0
-#   bash run_libero_eval.sh object outputs/VLA-Adapter--libero_object_no_noops--20250210_120000/ 0
-#   bash run_libero_eval.sh goal outputs/VLA-Adapter--libero_goal_no_noops--20250210_120000/ 0
-#   bash run_libero_eval.sh long outputs/VLA-Adapter--libero_10_no_noops--20250210_120000/ 0
-#
-# If no arguments are provided, it will evaluate all four task suites using Pro checkpoints.
+# All configurations are hardcoded in this script.
 # ============================================================================
 
-set -e  # Exit on error
+set -e
 
-# ============ Default Configuration ============
-TASK_SUITE=${1:-"all"}
-CHECKPOINT_PATH=${2:-""}
-GPU_ID=${3:-0}
+# ============ Configuration (Hardcoded) ============
+
+# Task suite to evaluate: spatial, object, goal, long, or all
+TASK_SUITE="all"
+
+# Checkpoint paths for each task suite
+CHECKPOINT_SPATIAL="outputs/LIBERO-Spatial-Pro"
+CHECKPOINT_OBJECT="outputs/LIBERO-Object-Pro"
+CHECKPOINT_GOAL="outputs/LIBERO-Goal-Pro"
+CHECKPOINT_LONG="outputs/LIBERO-long-Pro"
+
+# GPU ID to use
+GPU_ID=0
 
 # Common evaluation parameters
 USE_PROPRIO=True
@@ -40,12 +40,6 @@ TASK_OBJECT="libero_object"
 TASK_GOAL="libero_goal"
 TASK_LONG="libero_10"
 
-# Default checkpoint paths (Pro versions)
-DEFAULT_CHECKPOINT_SPATIAL="outputs/LIBERO-Spatial-Pro"
-DEFAULT_CHECKPOINT_OBJECT="outputs/LIBERO-Object-Pro"
-DEFAULT_CHECKPOINT_GOAL="outputs/LIBERO-Goal-Pro"
-DEFAULT_CHECKPOINT_LONG="outputs/LIBERO-long-Pro"
-
 # Log directory
 LOG_DIR="eval_logs"
 mkdir -p "$LOG_DIR"
@@ -53,21 +47,23 @@ mkdir -p "$LOG_DIR"
 # ============ Helper Functions ============
 
 print_usage() {
-    echo "Usage: bash run_libero_eval.sh [task_suite] [checkpoint_path] [gpu_id]"
+    echo "Usage: bash run_libero_eval.sh"
     echo ""
-    echo "Arguments:"
-    echo "  task_suite      Task suite to evaluate: spatial, object, goal, long, or all (default: all)"
-    echo "  checkpoint_path  Path to checkpoint directory (default: use Pro checkpoints)"
-    echo "  gpu_id          GPU ID to use (default: 0)"
+    echo "This script evaluates VLA-Adapter models on LIBERO benchmarks."
+    echo "All configurations are hardcoded in the script."
     echo ""
-    echo "Examples:"
-    echo "  bash run_libero_eval.sh spatial outputs/VLA-Adapter--libero_spatial_no_noops--20250210_120000/ 0"
-    echo "  bash run_libero_eval.sh object outputs/VLA-Adapter--libero_object_no_noops--20250210_120000/ 0"
-    echo "  bash run_libero_eval.sh goal outputs/VLA-Adapter--libero_goal_no_noops--20250210_120000/ 0"
-    echo "  bash run_libero_eval.sh long outputs/VLA-Adapter--libero_10_no_noops--20250210_120000/ 0"
-    echo "  bash run_libero_eval.sh all"
+    echo "To change configuration, edit the script directly:"
+    echo "  - TASK_SUITE: Task suite to evaluate (spatial, object, goal, long, or all)"
+    echo "  - CHECKPOINT_*: Checkpoint paths for each task suite"
+    echo "  - GPU_ID: GPU ID to use"
     echo ""
-    echo "If no arguments are provided, evaluates all four task suites using Pro checkpoints."
+    echo "Current configuration:"
+    echo "  Task Suite: $TASK_SUITE"
+    echo "  GPU ID: $GPU_ID"
+    echo "  Checkpoint Spatial: $CHECKPOINT_SPATIAL"
+    echo "  Checkpoint Object: $CHECKPOINT_OBJECT"
+    echo "  Checkpoint Goal: $CHECKPOINT_GOAL"
+    echo "  Checkpoint Long: $CHECKPOINT_LONG"
 }
 
 run_eval() {
@@ -124,7 +120,6 @@ echo "==========================================================================
 echo "VLA-Adapter Evaluation Script"
 echo "============================================================================"
 echo "Task Suite: $TASK_SUITE"
-echo "Checkpoint Path: ${CHECKPOINT_PATH:-[Using default Pro checkpoints]}"
 echo "GPU ID: $GPU_ID"
 echo "Log Directory: $LOG_DIR"
 echo "============================================================================"
@@ -133,23 +128,19 @@ echo ""
 # Evaluate specific task suite or all
 case "$TASK_SUITE" in
     spatial)
-        CHECKPOINT=${CHECKPOINT_PATH:-$DEFAULT_CHECKPOINT_SPATIAL}
-        run_eval "Spatial" "$TASK_SPATIAL" "$CHECKPOINT" "$GPU_ID"
+        run_eval "Spatial" "$TASK_SPATIAL" "$CHECKPOINT_SPATIAL" "$GPU_ID"
         ;;
     
     object)
-        CHECKPOINT=${CHECKPOINT_PATH:-$DEFAULT_CHECKPOINT_OBJECT}
-        run_eval "Object" "$TASK_OBJECT" "$CHECKPOINT" "$GPU_ID"
+        run_eval "Object" "$TASK_OBJECT" "$CHECKPOINT_OBJECT" "$GPU_ID"
         ;;
     
     goal)
-        CHECKPOINT=${CHECKPOINT_PATH:-$DEFAULT_CHECKPOINT_GOAL}
-        run_eval "Goal" "$TASK_GOAL" "$CHECKPOINT" "$GPU_ID"
+        run_eval "Goal" "$TASK_GOAL" "$CHECKPOINT_GOAL" "$GPU_ID"
         ;;
     
     long)
-        CHECKPOINT=${CHECKPOINT_PATH:-$DEFAULT_CHECKPOINT_LONG}
-        run_eval "Long" "$TASK_LONG" "$CHECKPOINT" "$GPU_ID"
+        run_eval "Long" "$TASK_LONG" "$CHECKPOINT_LONG" "$GPU_ID"
         ;;
     
     all)
@@ -157,10 +148,10 @@ case "$TASK_SUITE" in
         echo ""
         
         # Evaluate all four task suites
-        run_eval "Spatial" "$TASK_SPATIAL" "$DEFAULT_CHECKPOINT_SPATIAL" "$GPU_ID"
-        run_eval "Object" "$TASK_OBJECT" "$DEFAULT_CHECKPOINT_OBJECT" "$GPU_ID"
-        run_eval "Goal" "$TASK_GOAL" "$DEFAULT_CHECKPOINT_GOAL" "$GPU_ID"
-        run_eval "Long" "$TASK_LONG" "$DEFAULT_CHECKPOINT_LONG" "$GPU_ID"
+        run_eval "Spatial" "$TASK_SPATIAL" "$CHECKPOINT_SPATIAL" "$GPU_ID"
+        run_eval "Object" "$TASK_OBJECT" "$CHECKPOINT_OBJECT" "$GPU_ID"
+        run_eval "Goal" "$TASK_GOAL" "$CHECKPOINT_GOAL" "$GPU_ID"
+        run_eval "Long" "$TASK_LONG" "$CHECKPOINT_LONG" "$GPU_ID"
         
         echo ""
         echo "============================================================================"
