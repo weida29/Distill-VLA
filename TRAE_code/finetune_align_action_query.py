@@ -328,7 +328,6 @@ def run_forward_pass(
     # Visual teacher alignment components
     gdino_teacher=None,
     action_query_alignment_head=None,
-    grounding_module=None,
     alignment_criterion=None,
 ) -> Tuple[torch.Tensor, Dict[str, float]]:
     """
@@ -468,13 +467,8 @@ def run_forward_pass(
             ).to(torch.float32)  # [B, 64, 896]
             
             # Project to GDINO space using ActionQueryAlignmentHead
-            if cfg.use_action_query_alignment and action_query_alignment_head is not None:
-                student_hs, student_ref = action_query_alignment_head.module(action_queries)
-                # [B, 64, 256], [B, 64, 4]
-            else:
-                # Fallback: use GroundingModule (original method)
-                student_hs, student_ref = grounding_module.module(action_queries)
-                # [B, 64, 256], [B, 64, 4]
+            student_hs, student_ref = action_query_alignment_head.module(action_queries)
+            # [B, 900, 256], [B, 900, 4]
             
             # GDINO Teacher forward (only main view image)
             with torch.no_grad():
@@ -613,7 +607,6 @@ def save_training_checkpoint(
     distributed_state,
     new_state_dict,
     action_query_alignment_head=None,
-    grounding_module=None,
 ) -> None:
     """
     Save all training checkpoints including model components, LoRA adapter, and dataset statistics.
@@ -679,10 +672,6 @@ def save_training_checkpoint(
         if cfg.use_visual_teacher and cfg.use_action_query_alignment and action_query_alignment_head is not None:
             action_query_alignment_head_unwrapped = action_query_alignment_head.module if hasattr(action_query_alignment_head, 'module') else action_query_alignment_head
             torch.save(action_query_alignment_head_unwrapped.state_dict(), checkpoint_dir / f"action_query_alignment_head--{checkpoint_name_suffix}")
-
-        # Save grounding_module for visual teacher alignment
-        if cfg.use_visual_teacher and not cfg.use_action_query_alignment and grounding_module is not None:
-            torch.save(grounding_module.state_dict(), checkpoint_dir / f"grounding_module--{checkpoint_name_suffix}")
 
         if cfg.use_film:
             # To be safe, just save the entire vision backbone (not just FiLM components)
@@ -786,7 +775,6 @@ def run_validation(
                 cfg=cfg,
                 gdino_teacher=gdino_teacher,
                 action_query_alignment_head=action_query_alignment_head,
-                grounding_module=grounding_module,
                 alignment_criterion=alignment_criterion,
             )
 
@@ -1076,18 +1064,6 @@ def finetune(cfg: FinetuneConfig) -> None:
                 action_query_alignment_head_unwrapped.load_state_dict(state_dict)
                 print("Loaded action_query_alignment_head from checkpoint!")
         
-        # Initialize GroundingModule (only if not using action query alignment)
-        if not cfg.use_action_query_alignment:
-            num_visual_patches = vla.module.vision_backbone.get_num_patches() * vla.module.vision_backbone.get_num_images_in_input()
-            grounding_module = GroundingModule(
-                num_queries=num_visual_patches,
-                llm_dim=vla.module.llm_dim,
-                gdino_dim=cfg.gdino_dim,
-                dropout=cfg.grounding_dropout,
-            ).to(torch.float32).to(device_id)
-            grounding_module = wrap_ddp(grounding_module, device_id)
-            count_parameters(grounding_module, "grounding_module")
-        
         # Initialize Alignment Loss
         alignment_criterion = FeatureAlignmentLoss(
             hs_weight=cfg.hs_weight,
@@ -1110,8 +1086,6 @@ def finetune(cfg: FinetuneConfig) -> None:
     # Add visual teacher alignment parameters
     if cfg.use_visual_teacher and action_query_alignment_head is not None:
         trainable_params += [param for param in action_query_alignment_head.parameters() if param.requires_grad]
-    if cfg.use_visual_teacher and grounding_module is not None:
-        trainable_params += [param for param in grounding_module.parameters() if param.requires_grad]
     
     print(f"# total trainable params: {sum(p.numel() for p in trainable_params)}")
     optimizer = AdamW(trainable_params, lr=cfg.learning_rate)
@@ -1349,7 +1323,6 @@ def finetune(cfg: FinetuneConfig) -> None:
                     val_time_limit=cfg.val_time_limit,
                     gdino_teacher=gdino_teacher,
                     action_query_alignment_head=action_query_alignment_head,
-                    grounding_module=grounding_module,
                     alignment_criterion=alignment_criterion,
                 )
                 # Set model back to training mode after validation
